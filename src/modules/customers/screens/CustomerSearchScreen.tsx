@@ -1,0 +1,248 @@
+import React, { useState, useCallback, useMemo } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity,
+  StyleSheet, ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BRANDING } from '@config/branding';
+import { fetchCustomers, fetchGuestCustomers } from '@services/woocommerce';
+import SearchBar from '@components/SearchBar';
+import EmptyState from '@components/EmptyState';
+import type { WCCustomer } from '@app-types/woocommerce';
+import type { CustomersStackParamList } from '@navigation/types';
+import { useTheme } from '@context/ThemeContext';
+import type { BrandColors } from '@config/themes';
+
+type NavProp = NativeStackNavigationProp<CustomersStackParamList, 'CustomerSearch'>;
+
+// Clé stable pour les invités (même logique que CreateOrderScreen)
+function customerKey(c: WCCustomer): string {
+  return c.id !== 0 ? `reg-${c.id}` : `guest-${c.email || c.billing.phone || `${c.first_name}${c.last_name}`}`;
+}
+
+const makeStyles = (c: BrandColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.background },
+  searchBar: {
+    padding: BRANDING.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+  },
+  guestLoadingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: BRANDING.spacing.sm,
+    paddingHorizontal: BRANDING.spacing.lg,
+    paddingVertical: BRANDING.spacing.xs,
+    backgroundColor: c.primary + '12',
+    borderBottomWidth: 1,
+    borderBottomColor: c.primary + '30',
+  },
+  guestLoadingText: {
+    fontSize: BRANDING.fonts.sizeXS,
+    color: c.primary,
+  },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  listContent: { paddingBottom: 20 },
+  customerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: BRANDING.spacing.lg,
+    paddingVertical: BRANDING.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    gap: BRANDING.spacing.md,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: c.primary + '33',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  avatarText: {
+    fontSize: BRANDING.fonts.sizeMD,
+    fontWeight: BRANDING.fonts.weightBold,
+    color: c.primary,
+    textTransform: 'uppercase',
+  },
+  customerInfo: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: BRANDING.spacing.xs, flexWrap: 'wrap' },
+  name: {
+    fontSize: BRANDING.fonts.sizeMD,
+    fontWeight: BRANDING.fonts.weightSemiBold,
+    color: c.textPrimary,
+  },
+  guestBadge: {
+    backgroundColor: c.textMuted + '33',
+    borderRadius: BRANDING.radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  guestText: { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted },
+  partnerBadge: {
+    backgroundColor: c.success + '33',
+    borderRadius: BRANDING.radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  partnerText: { fontSize: BRANDING.fonts.sizeXS, color: c.success },
+  email: { fontSize: BRANDING.fonts.sizeSM, color: c.textSecondary, marginTop: 1 },
+  phone: { fontSize: BRANDING.fonts.sizeSM, color: c.textSecondary, marginTop: 1 },
+  meta: { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted, marginTop: 1 },
+  ordersMeta: { alignItems: 'center', flexShrink: 0 },
+  ordersCount: {
+    fontSize: BRANDING.fonts.sizeLG,
+    fontWeight: BRANDING.fonts.weightBold,
+    color: c.textPrimary,
+  },
+  ordersLabel: { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted },
+  emptyContainer: { flex: 1 },
+});
+
+export default function CustomerSearchScreen() {
+  const navigation = useNavigation<NavProp>();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const [query, setQuery] = useState('');
+  const [customers, setCustomers] = useState<WCCustomer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingGuests, setLoadingGuests] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const search = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setCustomers([]);
+      setSearched(false);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setSearched(true);
+    try {
+      // Étape 1 : clients enregistrés — s'affichent immédiatement
+      const registered = await fetchCustomers(q);
+      setCustomers(registered);
+      setLoading(false);
+
+      // Étape 2 : invités — chargés en arrière-plan, ajoutés sans bloquer
+      setLoadingGuests(true);
+      const guests = await fetchGuestCustomers(q);
+      setLoadingGuests(false);
+      if (guests.length > 0) {
+        const regEmails = new Set(registered.filter(c => c.email).map(c => c.email.toLowerCase()));
+        const unique = guests.filter(g => !g.email || !regEmails.has(g.email.toLowerCase()));
+        if (unique.length > 0) {
+          setCustomers(prev => {
+            const existingKeys = new Set(prev.map(customerKey));
+            const deduped = unique.filter(g => !existingKeys.has(customerKey(g)));
+            return deduped.length > 0 ? [...prev, ...deduped] : prev;
+          });
+        }
+      }
+    } catch {
+      setLoading(false);
+      setLoadingGuests(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => search(query), 400);
+    return () => clearTimeout(t);
+  }, [query, search]);
+
+  const navigateToCustomer = (c: WCCustomer) => {
+    navigation.navigate('CustomerDetail', {
+      customerId: c.id,
+      guestJson: c.id === 0 ? JSON.stringify(c) : undefined,
+    });
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.searchBar}>
+        <SearchBar value={query} onChangeText={setQuery} placeholder="Nom, email, téléphone…" />
+      </View>
+
+      {loadingGuests && !loading && (
+        <View style={styles.guestLoadingBar}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.guestLoadingText}>Recherche dans les commandes invités…</Text>
+        </View>
+      )}
+
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={customers}
+          keyExtractor={customerKey}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.customerRow}
+              onPress={() => navigateToCustomer(item)}
+            >
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {item.first_name.charAt(0)}{item.last_name.charAt(0)}
+                </Text>
+              </View>
+              <View style={styles.customerInfo}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.name}>{item.first_name} {item.last_name}</Text>
+                  {item.id === 0 && (
+                    <View style={styles.guestBadge}>
+                      <Text style={styles.guestText}>Invité</Text>
+                    </View>
+                  )}
+                  {item.role === 'partner' && (
+                    <View style={styles.partnerBadge}>
+                      <Text style={styles.partnerText}>Partenaire</Text>
+                    </View>
+                  )}
+                </View>
+                {item.email ? <Text style={styles.email}>{item.email}</Text> : null}
+                {item.billing.phone ? <Text style={styles.phone}>{item.billing.phone}</Text> : null}
+                {item.billing.company ? <Text style={styles.meta}>{item.billing.company}</Text> : null}
+                {item.billing.city ? (
+                  <Text style={styles.meta}>
+                    {item.billing.city}{item.billing.country ? ` · ${item.billing.country}` : ''}
+                  </Text>
+                ) : null}
+              </View>
+              {item.id !== 0 && (
+                <View style={styles.ordersMeta}>
+                  <Text style={styles.ordersCount}>{item.orders_count ?? 0}</Text>
+                  <Text style={styles.ordersLabel}>cmd.</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            searched ? (
+              <EmptyState
+                icon="🔍"
+                title="Aucun client trouvé"
+                subtitle={`Aucun résultat pour "${query}"`}
+              />
+            ) : (
+              <EmptyState
+                icon="👥"
+                title="Recherchez un client"
+                subtitle="Tapez au moins 2 caractères pour chercher"
+              />
+            )
+          }
+          contentContainerStyle={customers.length === 0 ? styles.emptyContainer : styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </SafeAreaView>
+  );
+}

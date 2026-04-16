@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Order Manager",
+    "slug": "presellia-order-manager",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F0F23"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tedisun.presellia.ordermanager"
+    },
+    "android": {
+      "package": "com.tedisun.presellia.ordermanager",
+      "versionCode": 2026041616,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F0F23"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.INTERNET", "android.permission.RECEIVE_BOOT_COMPLETED", "android.permission.VIBRATE"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "notification": {
+      "color": "#6C63FF"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications"
+    ]
+  }
+}

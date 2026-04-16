@@ -1,0 +1,132 @@
+import type { WCCustomer } from '@app-types/woocommerce';
+
+export function simulateDelay<T>(data: T, ms = 400): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(data), ms));
+}
+
+export const MOCK_CUSTOMERS: WCCustomer[] = [
+  {
+    id: 101,
+    date_created: '2024-06-15T10:00:00',
+    email: 'kofi.asante@smartit.bf',
+    first_name: 'Kofi',
+    last_name: 'Asante',
+    username: 'kofi.asante',
+    role: 'customer',
+    avatar_url: '',
+    billing: {
+      first_name: 'Kofi', last_name: 'Asante', company: 'SMART IT SARL',
+      address_1: '', address_2: '', city: 'Ouagadougou',
+      state: '', postcode: '', country: 'BF',
+      email: 'kofi.asante@smartit.bf', phone: '+22670123456',
+    },
+    shipping: { first_name: 'Kofi', last_name: 'Asante', address_1: '', city: 'Ouagadougou', country: 'BF' },
+    meta_data: [],
+    orders_count: 12,
+    total_spent: '347500',
+  },
+  {
+    id: 102,
+    date_created: '2024-09-20T14:30:00',
+    email: 'akim.lawani@gmail.com',
+    first_name: 'Akim',
+    last_name: 'Lawani',
+    username: 'akim.lawani',
+    role: 'customer',
+    avatar_url: '',
+    billing: {
+      first_name: 'Akim', last_name: 'Lawani', company: '',
+      address_1: 'Quartier Zogbo', address_2: '', city: 'Cotonou',
+      state: '', postcode: '', country: 'BJ',
+      email: 'akim.lawani@gmail.com', phone: '+22961234567',
+    },
+    shipping: { first_name: 'Akim', last_name: 'Lawani', address_1: '', city: 'Cotonou', country: 'BJ' },
+    meta_data: [],
+    orders_count: 4,
+    total_spent: '89500',
+  },
+  {
+    id: 103,
+    date_created: '2026-03-01T08:00:00',
+    email: 'aminata.traore@gmail.com',
+    first_name: 'Aminata',
+    last_name: 'Traoré',
+    username: 'aminata.traore',
+    role: 'customer',
+    avatar_url: '',
+    billing: {
+      first_name: 'Aminata', last_name: 'Traoré', company: '',
+      address_1: 'Secteur 15', address_2: '', city: 'Ouagadougou',
+      state: '', postcode: '', country: 'BF',
+      email: 'aminata.traore@gmail.com', phone: '+22670456789',
+    },
+    shipping: { first_name: 'Aminata', last_name: 'Traoré', address_1: '', city: 'Ouagadougou', country: 'BF' },
+    meta_data: [],
+    orders_count: 1,
+    total_spent: '35000',
+  },
+  {
+    // Cas : client partenaire → prix PPB appliqués à la création commande
+    id: 108,
+    date_created: '2024-01-10T09:00:00',
+    email: 'ibrahim@compaore-info.bf',
+    first_name: 'Ibrahim',
+    last_name: 'Compaoré',
+    username: 'ibrahim.compaore',
+    role: 'partner',
+    avatar_url: '',
+    billing: {
+      first_name: 'Ibrahim', last_name: 'Compaoré', company: 'Compaoré Informatique',
+      address_1: "Avenue Kwame N'Krumah", address_2: '', city: 'Ouagadougou',
+      state: '', postcode: '', country: 'BF',
+      email: 'ibrahim@compaore-info.bf', phone: '+22670987654',
+    },
+    shipping: { first_name: 'Ibrahim', last_name: 'Compaoré', address_1: '', city: 'Ouagadougou', country: 'BF' },
+    meta_data: [],
+    orders_count: 37,
+    total_spent: '1245000',
+  },
+  {
+    // Cas : client sans téléphone enregistré (bug à corriger à la création commande)
+    id: 106,
+    date_created: '2025-11-05T11:00:00',
+    email: 'lassina.sere@gmail.com',
+    first_name: 'Lassina',
+    last_name: 'SERE',
+    username: 'lassina.sere',
+    role: 'customer',
+    avatar_url: '',
+    billing: {
+      first_name: 'Lassina', last_name: 'SERE', company: '',
+      address_1: '', address_2: '', city: 'Ouagadougou',
+      state: '', postcode: '', country: 'BF',
+      email: 'lassina.sere@gmail.com', phone: '', // ← bug : téléphone manquant
+    },
+    shipping: { first_name: 'Lassina', last_name: 'SERE', address_1: '', city: 'Ouagadougou', country: 'BF' },
+    meta_data: [],
+    orders_count: 3,
+    total_spent: '28900',
+  },
+  {
+    // Cas : nouveau client, aucune commande
+    id: 111,
+    date_created: '2026-04-14T09:00:00',
+    email: 'nouveau@example.com',
+    first_name: 'Nouveau',
+    last_name: 'Client',
+    username: 'nouveau.client',
+    role: 'customer',
+    avatar_url: '',
+    billing: {
+      first_name: 'Nouveau', last_name: 'Client', company: '',
+      address_1: '', address_2: '', city: '',
+      state: '', postcode: '', country: 'BF',
+      email: 'nouveau@example.com', phone: '',
+    },
+    shipping: { first_name: 'Nouveau', last_name: 'Client', address_1: '', city: '', country: 'BF' },
+    meta_data: [],
+    orders_count: 0,
+    total_spent: '0',
+  },
+];
+

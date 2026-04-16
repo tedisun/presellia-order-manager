@@ -1,0 +1,58 @@
+import type { AppNotification } from '@app-types/woocommerce';
+
+export const MOCK_NOTIFICATIONS: AppNotification[] = [
+  {
+    id: 'notif-1',
+    type: 'new_order',
+    title: 'Nouvelle commande #20652',
+    body: 'Aminata Traoré — 35 000 F CFA',
+    order_id: 20652,
+    read: false,
+    created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-2',
+    type: 'new_order',
+    title: 'Nouvelle commande #20651',
+    body: 'Kofi Asante — 85 000 F CFA',
+    order_id: 20651,
+    read: false,
+    created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-3',
+    type: 'status_change',
+    title: 'Commande #20650 terminée',
+    body: 'Lassina Sané — licence livrée',
+    order_id: 20650,
+    read: false,
+    created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-4',
+    type: 'status_change',
+    title: 'Commande #20649 annulée',
+    body: 'Aloïs Ramage',
+    order_id: 20649,
+    read: true,
+    created_at: new Date(Date.now() - 28 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-5',
+    type: 'new_order',
+    title: 'Nouvelle commande #20648',
+    body: 'Akim Lawani — 26 950 F CFA',
+    order_id: 20648,
+    read: true,
+    created_at: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-6',
+    type: 'system',
+    title: 'Mise à jour disponible',
+    body: 'Order Manager v1.1.0 — Voir les nouveautés',
+    order_id: undefined,
+    read: true,
+    created_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+  },
+];

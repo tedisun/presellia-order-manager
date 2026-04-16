@@ -1,0 +1,19 @@
+import type { WCProduct } from '@app-types/woocommerce';
+
+export const MOCK_LOW_STOCK_PRODUCTS: WCProduct[] = [
+  { id: 110, name: 'Kaspersky Total Security (1 PC | 1 an)', slug: 'kaspersky-total-1pc', type: 'simple', status: 'publish', price: '14500', regular_price: '14500', sale_price: '', sku: 'KAS-TOT-1PC', stock_status: 'instock', stock_quantity: 2, categories: [{ id: 3, name: 'Antivirus' }], partner_price: '11200' },
+  { id: 111, name: 'Adobe Creative Cloud (1 an)', slug: 'adobe-cc-1an', type: 'simple', status: 'publish', price: '89000', regular_price: '89000', sale_price: '', sku: 'ADB-CC-1Y', stock_status: 'instock', stock_quantity: 1, categories: [{ id: 4, name: 'Adobe' }] },
+  { id: 112, name: 'Windows 11 Home', slug: 'windows-11-home', type: 'simple', status: 'publish', price: '22000', regular_price: '22000', sale_price: '', sku: 'WIN-11-HOME', stock_status: 'instock', stock_quantity: 3, categories: [{ id: 1, name: 'Windows' }], partner_price: '17500' },
+];
+
+export const MOCK_PRODUCTS: WCProduct[] = [
+  { id: 102, name: 'Windows 11 Pro', slug: 'windows-11-pro', type: 'simple', status: 'publish', price: '35000', regular_price: '35000', sale_price: '', sku: 'WIN-11-PRO', stock_status: 'instock', stock_quantity: null, categories: [{ id: 1, name: 'Windows' }], partner_price: '28000' },
+  { id: 103, name: 'Microsoft Office 2021 Pro Plus', slug: 'office-2021-pro-plus', type: 'simple', status: 'publish', price: '15000', regular_price: '15000', sale_price: '', sku: 'MS-OFF-2021-PP', stock_status: 'instock', stock_quantity: null, categories: [{ id: 2, name: 'Office' }], partner_price: '11500' },
+  { id: 101, name: 'Microsoft Office 2021 Home & Student', slug: 'office-2021-home', type: 'simple', status: 'publish', price: '35000', regular_price: '35000', sale_price: '', sku: 'MS-OFF-2021-HS', stock_status: 'instock', stock_quantity: null, categories: [{ id: 2, name: 'Office' }], partner_price: '29000' },
+  { id: 104, name: 'Kaspersky Plus (1 PC | 1 an)', slug: 'kaspersky-plus-1pc', type: 'simple', status: 'publish', price: '12400', regular_price: '12400', sale_price: '', sku: 'KAS-PLUS-1PC', stock_status: 'instock', stock_quantity: null, categories: [{ id: 3, name: 'Antivirus' }], partner_price: '9800' },
+  { id: 105, name: 'Kaspersky Standard (3 PC | 1 an)', slug: 'kaspersky-standard-3pc', type: 'simple', status: 'publish', price: '7900', regular_price: '7900', sale_price: '', sku: 'KAS-STD-3PC', stock_status: 'instock', stock_quantity: null, categories: [{ id: 3, name: 'Antivirus' }], partner_price: '6200' },
+  { id: 107, name: 'Windows 10 Pro', slug: 'windows-10-pro', type: 'simple', status: 'publish', price: '9500', regular_price: '9500', sale_price: '', sku: 'WIN-10-PRO', stock_status: 'instock', stock_quantity: null, categories: [{ id: 1, name: 'Windows' }], partner_price: '7500' },
+  { id: 106, name: 'Adobe Acrobat Pro DC (1 an)', slug: 'adobe-acrobat-pro', type: 'simple', status: 'publish', price: '26950', regular_price: '26950', sale_price: '', sku: 'ADB-ACR-PRO-1Y', stock_status: 'instock', stock_quantity: null, categories: [{ id: 4, name: 'Adobe' }], partner_price: '21500' },
+  { id: 108, name: 'Microsoft 365 Personnel (1 an)', slug: 'microsoft-365-personnel', type: 'simple', status: 'publish', price: '18500', regular_price: '18500', sale_price: '', sku: 'MS365-PERSO-1Y', stock_status: 'instock', stock_quantity: null, categories: [{ id: 2, name: 'Office' }], partner_price: '14500' },
+  { id: 109, name: 'Autodesk AutoCAD LT (1 an)', slug: 'autocad-lt-1an', type: 'simple', status: 'publish', price: '15000', regular_price: '15000', sale_price: '', sku: 'AUT-ACAD-LT-1Y', stock_status: 'instock', stock_quantity: null, categories: [{ id: 5, name: 'Autodesk' }], partner_price: '11800' },
+];
