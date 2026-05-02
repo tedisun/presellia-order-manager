@@ -22,12 +22,43 @@ USE_MOCK = false  → Phase 2 (API réelle, credentials stockés dans SecureStor
 
 Le flag est dans `src/config/constants.ts`. **Ne jamais modifier la logique des services** — seul ce boolean change.
 
-### Versioning — 2 points de synchronisation obligatoires
+### Checklist début de session — TOUJOURS exécuter en premier
 
-1. `app.json` → `version` (semver) + `versionCode` (format `yyyymmddHH`, ex: `2026041309`)
-2. `CHANGELOG.md` → entrée `## [X.Y.Z] — YYYY-MM-DD`
+```bash
+# 1. Vérifier que le remote est configuré
+git remote -v
+# Si vide : git remote add origin https://github.com/tedisun/presellia-order-manager.git && git fetch origin
 
-**Release** = `git tag vX.Y.Z && git push origin vX.Y.Z` → GitHub Actions construit et publie l'APK.
+# 2. Connaître l'état réel : commits locaux vs GitHub, tag vs master
+git log --oneline -5
+git show --format="%H %s" --no-patch $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD)
+git ls-remote origin 'refs/tags/*'   # tags existants sur GitHub
+
+# 3. Vérifier la version en production (GitHub Releases)
+gh release list --repo tedisun/presellia-order-manager
+
+# 4. S'assurer que master local = master GitHub
+git fetch origin && git status
+```
+
+> **Règle d'or** : ne jamais supposer la version courante. Toujours vérifier `gh release list` et `git ls-remote`. Les commits orphelins (tag local ≠ GitHub) sont la principale source de perte de travail.
+
+### Versioning — 3 points de synchronisation obligatoires
+
+1. `app.json` → `version` (semver) + `versionCode` (format `yyyymmddHH`, ex: `2026050200`)
+2. `src/config/constants.ts` → `APP_VERSION` (même valeur)
+3. `CHANGELOG.md` → entrée `## [X.Y.Z] — YYYY-MM-DD`
+
+**Release** :
+```bash
+git add <fichiers modifiés>
+git commit -m "feat: vX.Y.Z — description"
+git tag vX.Y.Z
+git push origin master
+git push origin vX.Y.Z   # déclenche GitHub Actions → EAS Build → APK publié
+```
+
+> Ne jamais pousser le tag sans avoir poussé le commit sur master d'abord. Un tag sur un commit orphelin (non présent sur master) produit un APK non reproductible.
 
 ### Architecture des modules
 
@@ -57,8 +88,11 @@ Chaque fichier = une responsabilité. Pas de "barrel" `index.ts` sauf si > 3 exp
 |---|---|
 | `@services/woocommerce` | Tous les appels WC REST API (mock + réel) |
 | `@services/storage` | SecureStore wrapper + localStorage fallback web |
+| `@services/cache` | Cache TTL en mémoire (reset au redémarrage) |
+| `@services/notifications` | Token Expo Push + stockage local AsyncStorage |
 | `@services/github-updates` | Vérification mise à jour APK |
 | `@modules/auth/hooks/useAuth` | Context auth + login/logout |
+| `@navigation/navigationRef` | Ref globale NavigationContainer (navigation depuis notifs) |
 
 ## Endpoints utilisés
 
@@ -95,10 +129,21 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## Pièges connus
 
+### Git / Release
+- **Remote non configuré** : `git remote -v` vide → ajouter origin avant tout commit
+- **Tag orphelin** : tag local qui n'a pas d'ancêtre en commun avec `origin/master` → GitHub Actions builde un commit que master ne connaît pas. Toujours `push master` avant `push tag`.
+- **Tag local ≠ tag GitHub** : `git show vX.Y.Z --format="%H"` vs `git ls-remote origin refs/tags/vX.Y.Z` — s'ils diffèrent, il y a un problème
+- **Git identity** : premier commit sur une nouvelle machine → `git config user.email` et `git config user.name` obligatoires
+- **Version inconnue** : ne jamais supposer la version courante — toujours vérifier `gh release list`
+
+### Code / API
 - `expo-secure-store` non disponible sur web → `storage.ts` détecte `Platform.OS` et bascule sur `localStorage`
 - `expo-notifications` silencieux sur web → guard `Platform.OS !== 'web'` dans Phase 2
 - WC `billing_phone` non synchronisé sur profil client après création manuelle → `syncCustomerPhone()` obligatoire
 - `versionCode` Android doit croître strictement → format `yyyymmddHH`
+- Produits partenaires (`/ppb/v1/products`) optionnels → toujours `.catch(() => [])`
+- Ne jamais mettre `slice(0, N)` sur une liste de produits — coupe le catalogue
+- `CUSTOMERS_PER_PAGE` = 100 (max WC API) — en dessous, des clients passent inaperçus
 - FlashList (Shopify) améliore les perfs sur grandes listes mais nécessite `getItemType` — utiliser `FlatList` en v1
 - Avec `edgeToEdgeEnabled: true` (Android SDK 35), la tab bar empiète sur la zone système → **toujours** appliquer `useSafeAreaInsets()` sur les éléments positionnés en bas
 
