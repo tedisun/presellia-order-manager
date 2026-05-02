@@ -109,14 +109,22 @@ export default function CustomerSearchScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [query, setQuery] = useState('');
-  const [customers, setCustomers] = useState<WCCustomer[]>([]);
+  const [customers, setCustomers] = useState<WCCustomer[]>(() => {
+    // Initialise avec les clients récents depuis le cache si disponible
+    try {
+      const { Cache, CACHE_KEYS } = require('@services/cache') as typeof import('@services/cache');
+      return Cache.get<WCCustomer[]>(CACHE_KEYS.RECENT_CUSTOMERS) ?? [];
+    } catch { return []; }
+  });
   const [loading, setLoading] = useState(false);
   const [loadingGuests, setLoadingGuests] = useState(false);
   const [searched, setSearched] = useState(false);
 
   const search = useCallback(async (q: string) => {
     if (q.length < 2) {
-      setCustomers([]);
+      // Revenir aux clients récents quand la recherche est effacée
+      const { Cache, CACHE_KEYS } = await import('@services/cache');
+      setCustomers(Cache.get<WCCustomer[]>(CACHE_KEYS.RECENT_CUSTOMERS) ?? []);
       setSearched(false);
       setLoading(false);
       return;
@@ -183,6 +191,11 @@ export default function CustomerSearchScreen() {
         <FlatList
           data={customers}
           keyExtractor={customerKey}
+          ListHeaderComponent={!searched && customers.length > 0 ? (
+            <Text style={{ color: colors.textMuted, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              Clients récents
+            </Text>
+          ) : null}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.customerRow}

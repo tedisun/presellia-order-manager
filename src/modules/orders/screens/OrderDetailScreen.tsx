@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, Share, RefreshControl, Linking,
+  View, Text, ScrollView, TouchableOpacity, FlatList,
+  StyleSheet, Alert, Share, RefreshControl, Linking, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -9,6 +9,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BRANDING } from '@config/branding';
 import { fetchOrder, updateOrderStatus, addOrderNote } from '@services/woocommerce';
+import { ALL_ORDER_STATUSES, getStatusLabel } from '@config/constants';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
 import LoadingSpinner from '@components/LoadingSpinner';
@@ -16,29 +17,6 @@ import type { WCOrder, OrderStatus } from '@app-types/woocommerce';
 import type { OrdersStackParamList } from '@navigation/types';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
-
-type RoutePropType = RouteProp<OrdersStackParamList, 'OrderDetail'>;
-type NavProp = NativeStackNavigationProp<OrdersStackParamList, 'OrderDetail'>;
-
-const STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  pending:    ['processing', 'cancelled', 'on-hold'],
-  processing: ['completed', 'cancelled', 'on-hold'],
-  'on-hold':  ['processing', 'cancelled'],
-  completed:  ['refunded'],
-  cancelled:  ['pending'],
-  refunded:   [],
-  failed:     ['pending', 'cancelled'],
-};
-
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  pending:    'En attente',
-  processing: 'En cours',
-  'on-hold':  'En pause',
-  completed:  'Terminée',
-  cancelled:  'Annulée',
-  refunded:   'Remboursée',
-  failed:     'Échouée',
-};
 
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 const TIMELINE_STEPS: { status: OrderStatus; label: string }[] = [
@@ -171,23 +149,52 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     textAlign: 'right',
     marginLeft: BRANDING.spacing.sm,
   },
-  transitionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: BRANDING.spacing.sm,
-    marginTop: BRANDING.spacing.xs,
-  },
-  transitionBtn: {
+  changeStatusBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: BRANDING.spacing.md,
-    paddingVertical: 5,
-    borderRadius: BRANDING.radius.full,
+    justifyContent: 'center',
+    gap: BRANDING.spacing.sm,
+    marginTop: BRANDING.spacing.sm,
+    paddingVertical: BRANDING.spacing.sm,
+    borderRadius: BRANDING.radius.md,
     borderWidth: 1,
-    gap: 5,
   },
-  transitionDot: { width: 6, height: 6, borderRadius: 3 },
-  transitionLabel: { fontSize: BRANDING.fonts.sizeSM },
+  changeStatusLabel: { fontSize: BRANDING.fonts.sizeSM, fontWeight: BRANDING.fonts.weightSemiBold },
+
+  // Modal picker
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: BRANDING.spacing.md,
+    paddingBottom: BRANDING.spacing.xl,
+    maxHeight: '70%',
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    alignSelf: 'center', marginBottom: BRANDING.spacing.md,
+  },
+  modalTitle: {
+    fontSize: BRANDING.fonts.sizeMD,
+    fontWeight: BRANDING.fonts.weightBold,
+    textAlign: 'center',
+    marginBottom: BRANDING.spacing.sm,
+    paddingHorizontal: BRANDING.spacing.lg,
+  },
+  statusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: BRANDING.spacing.lg,
+    paddingVertical: BRANDING.spacing.md,
+    gap: BRANDING.spacing.md,
+  },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  statusItemLabel: { fontSize: BRANDING.fonts.sizeMD, flex: 1 },
+  statusItemCurrent: { fontSize: BRANDING.fonts.sizeXS, fontWeight: BRANDING.fonts.weightSemiBold },
 
   shareBtn: {
     backgroundColor: c.primary,
@@ -286,6 +293,7 @@ export default function OrderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   const load = async () => {
     try {
@@ -302,11 +310,12 @@ export default function OrderDetailScreen() {
 
   useEffect(() => { load(); }, [orderId]);
 
-  const handleStatusChange = async (newStatus: OrderStatus) => {
+  const handleStatusChange = (newStatus: string) => {
     if (!order) return;
+    setPickerVisible(false);
     Alert.alert(
       'Changer le statut',
-      `Passer la commande #${order.number} en "${STATUS_LABELS[newStatus]}" ?`,
+      `Passer la commande #${order.number} en "${getStatusLabel(newStatus)}" ?`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -314,7 +323,7 @@ export default function OrderDetailScreen() {
           onPress: async () => {
             setUpdatingStatus(true);
             try {
-              const updated = await updateOrderStatus(order.id, newStatus);
+              const updated = await updateOrderStatus(order.id, newStatus as OrderStatus);
               setOrder(updated);
             } catch {
               Alert.alert('Erreur', 'Impossible de changer le statut.');
@@ -358,7 +367,6 @@ export default function OrderDetailScreen() {
   if (loading) return <LoadingSpinner fullScreen message="Chargement de la commande…" />;
   if (!order) return null;
 
-  const transitions = STATUS_TRANSITIONS[order.status] ?? [];
   const itemCount = order.line_items.reduce((s, l) => s + l.quantity, 0);
   const subtotal = order.line_items.reduce((s, l) => s + parseFloat(l.subtotal), 0);
   const discount = order.line_items.reduce((s, l) => s + (parseFloat(l.subtotal) - parseFloat(l.total)), 0);
@@ -369,6 +377,41 @@ export default function OrderDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
+
+      {/* ── Status picker modal ── */}
+      <Modal visible={pickerVisible} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPickerVisible(false)}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Modifier le statut</Text>
+            <FlatList
+              data={ALL_ORDER_STATUSES}
+              keyExtractor={(item) => item.slug}
+              renderItem={({ item }) => {
+                const isCurrent = item.slug === order.status;
+                const dotColor = (colors.status as Record<string, string>)[item.slug] ?? colors.textMuted;
+                return (
+                  <TouchableOpacity
+                    style={styles.statusItem}
+                    onPress={() => !isCurrent && handleStatusChange(item.slug)}
+                    disabled={isCurrent}
+                    activeOpacity={isCurrent ? 1 : 0.7}
+                  >
+                    <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+                    <Text style={[styles.statusItemLabel, { color: isCurrent ? colors.textMuted : colors.textPrimary }]}>
+                      {item.label}
+                    </Text>
+                    {isCurrent && (
+                      <Text style={[styles.statusItemCurrent, { color: colors.primary }]}>Actuel</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
@@ -387,24 +430,17 @@ export default function OrderDetailScreen() {
 
           <OrderTimeline currentStatus={order.status} colors={colors} />
 
-          {/* Status transitions */}
-          {transitions.length > 0 && (
-            <View style={styles.transitionRow}>
-              {transitions.map((s) => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.transitionBtn, { borderColor: colors.status[s] + '88' }]}
-                  onPress={() => handleStatusChange(s)}
-                  disabled={updatingStatus}
-                >
-                  <View style={[styles.transitionDot, { backgroundColor: colors.status[s] }]} />
-                  <Text style={[styles.transitionLabel, { color: colors.status[s] }]}>
-                    → {STATUS_LABELS[s]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          {/* Bouton modifier statut */}
+          <TouchableOpacity
+            style={[styles.changeStatusBtn, { borderColor: colors.border }]}
+            onPress={() => setPickerVisible(true)}
+            disabled={updatingStatus}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.changeStatusLabel, { color: colors.primary }]}>
+              {updatingStatus ? 'Mise à jour…' : '⇄  Modifier le statut'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Share payment link — prominent CTA */}

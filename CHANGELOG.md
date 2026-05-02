@@ -5,6 +5,26 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.2.0] — 2026-05-02
+
+### Ajouté
+- **Cache produits 12 h** : catalogue entier chargé au démarrage (`fetchAllProducts()`, pagination 100/page), filtrage local immédiat dans le formulaire de commande — plus aucun appel réseau à la frappe
+- **Clients récents** : 15 derniers clients affichés avant toute recherche (écrans Clients + Création commande), alimentés depuis les commandes récentes (cache 2 h)
+- **Status picker libre** : bottom sheet dans le détail commande listant tous les statuts disponibles (standard + custom), remplace les boutons de transitions prédéfinis
+
+### Corrigé
+- **Produits tronqués** : suppression du `slice(0, 15)` + pagination complète — les 60+ produits sont tous accessibles
+- **Clients introuvables** : `CUSTOMERS_PER_PAGE` 20 → 100 ; accélère la recherche serveur
+
+### Technique
+- Nouveau service `src/services/cache.ts` (cache TTL en mémoire)
+- Nouveau `src/navigation/navigationRef.ts` (navigation externe depuis notifications)
+- `ALL_ORDER_STATUSES` dans `constants.ts` — source unique pour le picker et les labels
+- `OrderStatus` étendu pour accepter les statuts WC personnalisés `(string & {})`
+- Bootstrap au démarrage : préchargement produits + enregistrement token push à la connexion
+
+---
+
 ## [1.1.0] — 2026-04-16
 
 ### Ajouté

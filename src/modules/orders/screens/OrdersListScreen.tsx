@@ -231,6 +231,12 @@ export default function OrdersListScreen() {
       const data = await fetchOrders({ search: q || undefined });
       setAllOrders(data);
       setLastUpdate(new Date());
+      // Mise à jour du cache clients récents depuis les dernières commandes
+      if (!q) {
+        const { Cache, CACHE_KEYS, buildRecentCustomersFromOrders } = await import('@services/cache');
+        const { RECENT_CUSTOMERS_CACHE_TTL } = await import('@config/constants');
+        Cache.set(CACHE_KEYS.RECENT_CUSTOMERS, buildRecentCustomersFromOrders(data), RECENT_CUSTOMERS_CACHE_TTL);
+      }
     } catch {
       // garder les données précédentes
     } finally {

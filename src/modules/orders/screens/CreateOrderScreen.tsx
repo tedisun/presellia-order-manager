@@ -1081,18 +1081,25 @@ function StepProducts({
 
   const isPartner = customer?.role === 'partner';
 
-  // Charger TOUT le catalogue une seule fois au mount — filtrage par nom client-side
-  // 59 produits = ~10ko, instantané, élimine le flickering et les appels répétés
+  // Catalogue produits : cache-first (TTL 12h, préchargé au démarrage).
+  // Si absent du cache, fetch complet paginé. Filtrage client-side.
   React.useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const { fetchProducts } = await import('@services/woocommerce');
-        const regular = await fetchProducts(); // pas de query = tout le catalogue
+        const { fetchAllProducts, fetchPartnerProducts: fetchPP } = await import('@services/woocommerce');
+        const { Cache, CACHE_KEYS } = await import('@services/cache');
+
+        let regular = Cache.get<import('@app-types/woocommerce').WCProduct[]>(CACHE_KEYS.ALL_PRODUCTS);
+        if (!regular) {
+          regular = await fetchAllProducts();
+        }
+
         if (isPartner) {
-          const partnerList = await fetchPartnerProducts();
+          let partnerList = Cache.get<import('@app-types/woocommerce').WCProduct[]>(CACHE_KEYS.PARTNER_PRODUCTS);
+          if (!partnerList) partnerList = await fetchPP().catch(() => []);
           const merged = regular.map((p) => {
-            const pp = partnerList.find((x) => x.id === p.id);
+            const pp = partnerList!.find((x) => x.id === p.id);
             return pp ? { ...p, partner_price: pp.partner_price } : p;
           });
           setAllProducts(merged);
@@ -1104,7 +1111,7 @@ function StepProducts({
       }
     };
     load();
-  }, [isPartner]); // recharge uniquement si le rôle change
+  }, [isPartner]);
 
   // Charger les produits fréquemment commandés une seule fois
   React.useEffect(() => {
@@ -1190,7 +1197,7 @@ function StepProducts({
 
         {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: 12 }} />}
 
-        {products.slice(0, 15).map((p) => (
+        {products.map((p) => (
           <TouchableOpacity key={p.id} style={styles.productRow} onPress={() => addProduct(p)}>
             <View style={{ flex: 1 }}>
               <Text style={styles.productName}>{p.name}</Text>

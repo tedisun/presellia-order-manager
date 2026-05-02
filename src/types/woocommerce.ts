@@ -6,7 +6,8 @@ export type OrderStatus =
   | 'completed'
   | 'cancelled'
   | 'refunded'
-  | 'failed';
+  | 'failed'
+  | (string & {});
 
 // ─── Méthodes de paiement hors ligne (spécifiques Presellia) ─────────────────
 export type OfflinePaymentDetail =
