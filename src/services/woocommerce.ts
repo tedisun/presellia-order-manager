@@ -318,32 +318,6 @@ export async function fetchPartnerProducts(): Promise<WCProduct[]> {
   return wcFetch<WCProduct[]>(`${PPB_API_PATH}/products`);
 }
 
-// Récupère tout le catalogue publié en paginant toutes les pages (100/page).
-// Utilisé au bootstrap pour alimenter le cache produits (TTL 12 h).
-export async function fetchAllProducts(): Promise<WCProduct[]> {
-  if (USE_MOCK) {
-    const { MOCK_PRODUCTS } = await import('@modules/orders/mock/productsMock');
-    const { simulateDelay: delay } = await import('@modules/orders/mock/ordersMock');
-    return delay([...MOCK_PRODUCTS]);
-  }
-  const all: WCProduct[] = [];
-  let page = 1;
-  while (true) {
-    const q = new URLSearchParams({
-      per_page: String(PRODUCTS_PER_PAGE),
-      page:     String(page),
-      status:   'publish',
-      orderby:  'title',
-      order:    'asc',
-    });
-    const batch = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${q}`);
-    all.push(...batch);
-    if (batch.length < PRODUCTS_PER_PAGE) break;
-    page++;
-  }
-  return all;
-}
-
 export async function fetchLowStockProducts(threshold = 5): Promise<WCProduct[]> {
   if (USE_MOCK) {
     const { MOCK_LOW_STOCK_PRODUCTS } = await import('@modules/orders/mock/productsMock');

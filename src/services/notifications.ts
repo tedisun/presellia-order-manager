@@ -15,9 +15,11 @@ export function setupNotificationDisplayHandler(): void {
   import('expo-notifications').then((Notifications) => {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge:  true,
+        shouldShowAlert:  true,
+        shouldShowBanner: true,
+        shouldShowList:   true,
+        shouldPlaySound:  true,
+        shouldSetBadge:   true,
         priority: Notifications.AndroidNotificationPriority?.HIGH,
       }),
     });
