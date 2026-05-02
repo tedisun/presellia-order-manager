@@ -15,16 +15,20 @@ import TabNavigator from './TabNavigator';
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 // ─── Bootstrap : précharge produits + enregistre token push ──────────────────
-async function bootstrapApp() {
+async function bootstrapApp(onOrderTap: (orderId: number) => void) {
   const [
     { fetchAllProducts, fetchPartnerProducts, fetchOrders },
     { Cache, CACHE_KEYS, buildRecentCustomersFromOrders },
-    { registerPushToken },
+    { registerPushToken, setupNotificationDisplayHandler, initNotificationListeners },
   ] = await Promise.all([
     import('@services/woocommerce'),
     import('@services/cache'),
     import('@services/notifications'),
   ]);
+
+  // Affichage foreground + canal Android + son
+  setupNotificationDisplayHandler();
+  initNotificationListeners(onOrderTap);
 
   // Push token (non-bloquant)
   registerPushToken().catch(() => {});
@@ -53,7 +57,15 @@ export default function AppNavigator() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    bootstrapApp().catch(() => {}); // erreurs silencieuses (mode offline)
+    const onOrderTap = (orderId: number) => {
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('Main', {
+          screen: 'OrdersTab',
+          params: { screen: 'OrderDetail', params: { orderId } },
+        } as any);
+      }
+    };
+    bootstrapApp(onOrderTap).catch(() => {});
   }, [isAuthenticated]);
 
   if (isLoading) {

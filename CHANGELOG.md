@@ -5,6 +5,24 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.3.0] — 2026-05-02
+
+### Ajouté
+- **Logo** : icône app branded (sac ✓ blanc, cercle violet, fond sombre) — icon.png / adaptive-icon.png / splash-icon.png / favicon.png
+- **Dashboard — Produits populaires** : section remplaçant "Stock faible" (inutile sur un catalogue 100% digital), affiche le top 5 des produits les plus vendus depuis les 50 dernières commandes
+- **Dashboard — KPIs Koko Analytics** : 2 nouvelles cartes Visiteurs et Pages vues (données déjà récupérées depuis v1.1.0 mais non affichées)
+
+### Corrigé
+- **Notifications push** : fix complet — handler foreground (`setNotificationHandler`) manquant → notifs silencieuses ; canal Android 8+ créé avec son + vibration ; token enregistré au login et envoyé au plugin mu ; navigation vers commande au tap
+- **Son notifications** : `shouldPlaySound: true` + canal Android avec `sound: 'default'`
+
+### Technique
+- `setupNotificationDisplayHandler()` doit être appelé AVANT tout listener (sinon iOS/Android ignore les notifications foreground)
+- `initNotificationListeners()` retourne une fonction de nettoyage (pattern Expo recommandé)
+- `bootstrapApp()` prend un callback `onOrderTap` pour router la navigation depuis les notifs
+
+---
+
 ## [1.2.0] — 2026-05-02
 
 ### Ajouté
