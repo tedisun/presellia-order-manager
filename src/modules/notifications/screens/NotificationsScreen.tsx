@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
@@ -22,6 +23,7 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
   title:            { fontSize: BRANDING.fonts.sizeXL, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
   badge:            { fontSize: BRANDING.fonts.sizeXS, color: c.primary, marginTop: 2 },
   markAllText:      { fontSize: BRANDING.fonts.sizeSM, color: c.primary },
+  diagBtn:          { padding: 6 },
   row:              { flexDirection: 'row', paddingHorizontal: BRANDING.spacing.lg, paddingVertical: BRANDING.spacing.md, borderBottomWidth: 1, borderBottomColor: c.border, gap: BRANDING.spacing.md, alignItems: 'flex-start' },
   rowUnread:        { backgroundColor: c.primary + '0A' },
   iconWrap:         { width: 40, height: 40, borderRadius: 20, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border },
@@ -44,6 +46,7 @@ const TYPE_ICONS: Record<string, string> = {
 export default function NotificationsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const navigation = useNavigation<any>();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,11 +85,16 @@ export default function NotificationsScreen() {
             <Text style={styles.badge}>{unreadCount} non lue{unreadCount > 1 ? 's' : ''}</Text>
           )}
         </View>
-        {unreadCount > 0 && (
-          <TouchableOpacity onPress={handleMarkAllRead}>
-            <Text style={styles.markAllText}>Tout lire</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: BRANDING.spacing.sm }}>
+          {unreadCount > 0 && (
+            <TouchableOpacity onPress={handleMarkAllRead}>
+              <Text style={styles.markAllText}>Tout lire</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.diagBtn} onPress={() => navigation.navigate('Diagnostic')}>
+            <Ionicons name="bug-outline" size={20} color={colors.textMuted} />
           </TouchableOpacity>
-        )}
+        </View>
       </View>
 
       <FlatList

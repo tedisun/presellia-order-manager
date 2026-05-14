@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -13,10 +13,11 @@ import { useAuth } from '@modules/auth/hooks/useAuth';
 import {
   fetchCustomers, fetchGuestCustomers, fetchPartnerProducts,
   createOrder, createCustomer, syncCustomerPhone, fetchTopProducts,
+  fetchProductVariations,
 } from '@services/woocommerce';
 import CurrencyText from '@components/CurrencyText';
 import SearchBar from '@components/SearchBar';
-import type { WCCustomer, WCProduct, CreateOrderPayload, OfflinePaymentDetail } from '@app-types/woocommerce';
+import type { WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, OfflinePaymentDetail } from '@app-types/woocommerce';
 import type { OrdersStackParamList } from '@navigation/types';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
@@ -26,10 +27,16 @@ type NavProp = NativeStackNavigationProp<OrdersStackParamList, 'CreateOrder'>;
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 interface LineItemDraft {
-  product: WCProduct;
-  quantity: number;
+  product:      WCProduct;
+  variation?:   WCProductVariation;   // défini si produit variable
+  quantity:     number;
   discountType: 'none' | 'percent' | 'fixed';
   discountValue: number;
+}
+
+/** Étiquette courte de la variation (ex: "1 an", "6 mois — Home") */
+function variationLabel(v: WCProductVariation): string {
+  return v.attributes.map((a) => a.option).join(' · ') || `#${v.id}`;
 }
 
 interface PaymentChoice {
@@ -47,8 +54,14 @@ const OFFLINE_METHODS: { value: OfflinePaymentDetail; label: string }[] = [
   { value: 'autre',        label: 'Autre' },
 ];
 
+function getLineUnitPrice(li: LineItemDraft): number {
+  // Priorité : prix variation > prix produit (partner ou standard)
+  if (li.variation) return parseFloat(li.variation.partner_price || li.variation.price || '0');
+  return parseFloat(li.product.price || '0');
+}
+
 function getLineTotal(li: LineItemDraft): number {
-  const base = parseFloat(li.product.price) * li.quantity;
+  const base = getLineUnitPrice(li) * li.quantity;
   if (li.discountType === 'percent') return base * (1 - li.discountValue / 100);
   if (li.discountType === 'fixed')   return Math.max(0, base - li.discountValue);
   return base;
@@ -361,6 +374,7 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     width: 56,
     textAlign: 'center',
   },
+  cartItemVariation: { fontSize: BRANDING.fonts.sizeXS, color: c.primary, marginTop: 1 },
   cartTotal: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -372,6 +386,39 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     borderColor: c.border,
   },
   cartTotalLabel: { fontSize: BRANDING.fonts.sizeMD, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
+  // Variation modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: c.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: BRANDING.spacing.lg,
+    gap: BRANDING.spacing.md,
+    maxHeight: '80%',
+  },
+  modalTitle:   { fontSize: BRANDING.fonts.sizeLG, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
+  modalProduct: { fontSize: BRANDING.fonts.sizeSM, color: c.textSecondary },
+  variationRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: c.background,
+    borderRadius: BRANDING.radius.md,
+    padding: BRANDING.spacing.md,
+    borderWidth: 1,
+    borderColor: c.border,
+    gap: BRANDING.spacing.sm,
+  },
+  variationRowOut: { opacity: 0.45 },
+  variationLabel: { flex: 1, fontSize: BRANDING.fonts.sizeMD, color: c.textPrimary },
+  variationSku:   { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted, marginTop: 2 },
+  outOfStockTag:  { fontSize: BRANDING.fonts.sizeXS, color: c.error },
+  modalCancel: {
+    paddingVertical: BRANDING.spacing.md,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: c.border,
+    marginTop: BRANDING.spacing.xs,
+  },
+  modalCancelText: { fontSize: BRANDING.fonts.sizeMD, color: c.textSecondary },
   // Payment step
   paymentCard: {
     flexDirection: 'row',
@@ -492,11 +539,11 @@ export default function CreateOrderScreen() {
           country:    customer.billing.country || 'BF',
         },
         line_items: lineItems.map((li) => ({
-          product_id: li.product.id,
-          quantity:   li.quantity,
-          // WC REST API ignore `price` sur POST — on passe subtotal (avant remise) et total (après remise)
-          subtotal: (parseFloat(li.product.price) * li.quantity).toFixed(2),
-          total:    getLineTotal(li).toFixed(2),
+          product_id:   li.product.id,
+          ...(li.variation ? { variation_id: li.variation.id } : {}),
+          quantity:     li.quantity,
+          subtotal:     (getLineUnitPrice(li) * li.quantity).toFixed(2),
+          total:        getLineTotal(li).toFixed(2),
         })),
         payment_method:       payment.mode === 'link' ? 'woocommerce_payments' : 'offline',
         payment_method_title: payment.mode === 'link' ? 'Paiement en ligne' : 'Paiement hors ligne',
@@ -1079,16 +1126,19 @@ function StepProducts({
   const [loading, setLoading] = useState(true);
   const [loadingTop, setLoadingTop] = useState(true);
 
+  // Variation picker state
+  const [pickerProduct, setPickerProduct] = useState<WCProduct | null>(null);
+  const [variations, setVariations]       = useState<WCProductVariation[]>([]);
+  const [loadingVars, setLoadingVars]     = useState(false);
+
   const isPartner = customer?.role === 'partner';
 
-  // Charger TOUT le catalogue une seule fois au mount — filtrage par nom client-side
-  // 59 produits = ~10ko, instantané, élimine le flickering et les appels répétés
   React.useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const { fetchProducts } = await import('@services/woocommerce');
-        const regular = await fetchProducts(); // pas de query = tout le catalogue
+        const regular = await fetchProducts();
         if (isPartner) {
           const partnerList = await fetchPartnerProducts();
           const merged = regular.map((p) => {
@@ -1104,14 +1154,12 @@ function StepProducts({
       }
     };
     load();
-  }, [isPartner]); // recharge uniquement si le rôle change
+  }, [isPartner]);
 
-  // Charger les produits fréquemment commandés une seule fois
   React.useEffect(() => {
     fetchTopProducts(6).then(setTopProducts).catch(() => {}).finally(() => setLoadingTop(false));
   }, []);
 
-  // Filtrage client-side par nom (+ SKU) — instantané, stable, sans appel réseau
   const q = query.trim().toLowerCase();
   const products = q.length >= 2
     ? allProducts.filter(p =>
@@ -1120,14 +1168,52 @@ function StepProducts({
       )
     : allProducts;
 
-  const addProduct = (product: WCProduct) => {
-    const existing = items.find((li) => li.product.id === product.id);
+  // Clé unique par ligne : product + variation
+  const lineKey = (li: LineItemDraft) =>
+    li.variation ? `${li.product.id}-${li.variation.id}` : String(li.product.id);
+
+  const addSimpleProduct = (product: WCProduct) => {
+    const key = String(product.id);
+    const existing = items.find((li) => lineKey(li) === key);
     if (existing) {
-      onChange(items.map((li) =>
-        li.product.id === product.id ? { ...li, quantity: li.quantity + 1 } : li
-      ));
+      onChange(items.map((li) => lineKey(li) === key ? { ...li, quantity: li.quantity + 1 } : li));
     } else {
       onChange([...items, { product, quantity: 1, discountType: 'none', discountValue: 0 }]);
+    }
+  };
+
+  const addVariation = (product: WCProduct, variation: WCProductVariation) => {
+    const key = `${product.id}-${variation.id}`;
+    const existing = items.find((li) => lineKey(li) === key);
+    if (existing) {
+      onChange(items.map((li) => lineKey(li) === key ? { ...li, quantity: li.quantity + 1 } : li));
+    } else {
+      // Injecter le partner_price si disponible sur le produit parent
+      const varWithPartner = isPartner && product.partner_price
+        ? { ...variation, partner_price: product.partner_price }
+        : variation;
+      onChange([...items, { product, variation: varWithPartner, quantity: 1, discountType: 'none', discountValue: 0 }]);
+    }
+    setPickerProduct(null);
+  };
+
+  const handleProductPress = async (product: WCProduct) => {
+    if (product.type !== 'variable') {
+      addSimpleProduct(product);
+      return;
+    }
+    // Produit variable : charger et afficher le picker
+    setPickerProduct(product);
+    setVariations([]);
+    setLoadingVars(true);
+    try {
+      const vars = await fetchProductVariations(product.id);
+      setVariations(vars.filter((v) => v.status === 'publish'));
+    } catch {
+      Alert.alert('Erreur', 'Impossible de charger les variations.');
+      setPickerProduct(null);
+    } finally {
+      setLoadingVars(false);
     }
   };
 
@@ -1140,6 +1226,27 @@ function StepProducts({
   };
 
   const total = items.reduce((s, li) => s + getLineTotal(li), 0);
+
+  const productRowContent = (p: WCProduct) => (
+    <>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.productName}>{p.name}</Text>
+        {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
+        {p.type === 'variable' && (
+          <Text style={[styles.productSku, { color: colors.primary }]}>Variations disponibles ›</Text>
+        )}
+      </View>
+      {p.type !== 'variable' && (
+        <CurrencyText
+          amount={isPartner && p.partner_price ? p.partner_price : p.price}
+          size="sm"
+          bold={isPartner && !!p.partner_price}
+          color={isPartner && p.partner_price ? colors.success : undefined}
+        />
+      )}
+      <Text style={styles.addBtn}>+</Text>
+    </>
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -1155,7 +1262,6 @@ function StepProducts({
 
         <SearchBar value={query} onChangeText={setQuery} placeholder="Rechercher un produit…" />
 
-        {/* Fréquemment commandés — masqué pendant la recherche */}
         {!query && (
           <>
             <View style={styles.sectionHeader}>
@@ -1166,18 +1272,8 @@ function StepProducts({
               <ActivityIndicator color={colors.primary} style={{ marginVertical: 8 }} />
             ) : topProducts.length > 0 ? (
               topProducts.map((p) => (
-                <TouchableOpacity key={`top-${p.id}`} style={styles.productRow} onPress={() => addProduct(p)}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.productName}>{p.name}</Text>
-                    {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
-                  </View>
-                  <CurrencyText
-                    amount={isPartner && p.partner_price ? p.partner_price : p.price}
-                    size="sm"
-                    bold={isPartner && !!p.partner_price}
-                    color={isPartner && p.partner_price ? colors.success : undefined}
-                  />
-                  <Text style={styles.addBtn}>+</Text>
+                <TouchableOpacity key={`top-${p.id}`} style={styles.productRow} onPress={() => handleProductPress(p)}>
+                  {productRowContent(p)}
                 </TouchableOpacity>
               ))
             ) : null}
@@ -1191,18 +1287,8 @@ function StepProducts({
         {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: 12 }} />}
 
         {products.slice(0, 15).map((p) => (
-          <TouchableOpacity key={p.id} style={styles.productRow} onPress={() => addProduct(p)}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.productName}>{p.name}</Text>
-              {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
-            </View>
-            <CurrencyText
-              amount={isPartner && p.partner_price ? p.partner_price : p.price}
-              size="sm"
-              bold={isPartner && !!p.partner_price}
-              color={isPartner && p.partner_price ? colors.success : undefined}
-            />
-            <Text style={styles.addBtn}>+</Text>
+          <TouchableOpacity key={p.id} style={styles.productRow} onPress={() => handleProductPress(p)}>
+            {productRowContent(p)}
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -1212,9 +1298,14 @@ function StepProducts({
         <View style={styles.stickyCartPanel}>
           <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: BRANDING.spacing.sm }} keyboardShouldPersistTaps="handled">
             {items.map((li, idx) => (
-              <View key={li.product.id} style={styles.cartItem}>
+              <View key={lineKey(li)} style={styles.cartItem}>
                 <View style={styles.cartItemTop}>
-                  <Text style={styles.cartItemName} numberOfLines={1}>{li.product.name}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cartItemName} numberOfLines={1}>{li.product.name}</Text>
+                    {li.variation && (
+                      <Text style={styles.cartItemVariation}>{variationLabel(li.variation)}</Text>
+                    )}
+                  </View>
                   <TouchableOpacity onPress={() => removeItem(idx)}>
                     <Text style={styles.removeBtn}>✕</Text>
                   </TouchableOpacity>
@@ -1267,6 +1358,59 @@ function StepProducts({
           </View>
         </View>
       )}
+
+      {/* ─── Variation picker modal ─── */}
+      <Modal
+        visible={pickerProduct !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPickerProduct(null)}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPickerProduct(null)}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Choisir une variation</Text>
+            {pickerProduct && (
+              <Text style={styles.modalProduct}>{pickerProduct.name}</Text>
+            )}
+
+            {loadingVars ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: BRANDING.spacing.lg }} />
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {variations.map((v) => {
+                  const outOfStock = v.stock_status === 'outofstock';
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[styles.variationRow, outOfStock && styles.variationRowOut, { marginBottom: BRANDING.spacing.sm }]}
+                      onPress={() => !outOfStock && pickerProduct && addVariation(pickerProduct, v)}
+                      disabled={outOfStock}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.variationLabel}>{variationLabel(v)}</Text>
+                        {v.sku ? <Text style={styles.variationSku}>{v.sku}</Text> : null}
+                        {outOfStock && <Text style={styles.outOfStockTag}>Rupture de stock</Text>}
+                      </View>
+                      {!outOfStock && (
+                        <CurrencyText
+                          amount={isPartner && v.partner_price ? v.partner_price : v.price}
+                          size="sm"
+                          bold={isPartner && !!v.partner_price}
+                          color={isPartner && v.partner_price ? colors.success : undefined}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setPickerProduct(null)}>
+              <Text style={styles.modalCancelText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1361,9 +1505,13 @@ function StepRecap({
 
       <View style={styles.recapSection}>
         <Text style={styles.recapLabel}>Articles ({items.length})</Text>
-        {items.map((li) => (
-          <View key={li.product.id} style={styles.recapItem}>
-            <Text style={styles.recapItemName} numberOfLines={1}>{li.product.name} × {li.quantity}</Text>
+        {items.map((li, i) => (
+          <View key={i} style={styles.recapItem}>
+            <Text style={styles.recapItemName} numberOfLines={2}>
+              {li.product.name}
+              {li.variation ? ` — ${variationLabel(li.variation)}` : ''}
+              {' '}× {li.quantity}
+            </Text>
             <CurrencyText amount={getLineTotal(li)} size="sm" />
           </View>
         ))}

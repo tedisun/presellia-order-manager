@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, RefreshControl, Modal, Pressable,
+  StyleSheet, RefreshControl, Modal, Pressable, AppState, type AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -138,6 +138,18 @@ export default function DashboardScreen() {
   useEffect(() => {
     setLoading(true);
     load();
+  }, [load]);
+
+  // Refresh automatique quand l'app revient au premier plan
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (appStateRef.current !== 'active' && nextState === 'active') {
+        load();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => subscription.remove();
   }, [load]);
 
   const onRefresh = () => {

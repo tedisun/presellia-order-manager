@@ -4,8 +4,9 @@ import type { CompositeScreenProps } from '@react-navigation/native';
 
 // ─── Stack racine (auth gate) ─────────────────────────────────────────────────
 export type RootStackParamList = {
-  Auth: undefined;
-  Main: undefined;
+  Auth:       undefined;
+  Main:       undefined;
+  Diagnostic: undefined;
 };
 
 // ─── Stack Auth ───────────────────────────────────────────────────────────────

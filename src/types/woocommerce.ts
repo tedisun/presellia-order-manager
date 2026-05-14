@@ -136,6 +136,20 @@ export interface WCProduct {
   partner_price?: string;     // depuis PPB /ppb/v1/products — null si pas partenaire
 }
 
+// ─── Variation de produit variable ───────────────────────────────────────────
+export interface WCProductVariation {
+  id: number;
+  status: 'publish' | 'draft' | 'private';
+  price: string;
+  regular_price: string;
+  sale_price: string;
+  sku: string;
+  stock_status: 'instock' | 'outofstock' | 'onbackorder';
+  stock_quantity: number | null;
+  attributes: { id: number; name: string; option: string }[];
+  partner_price?: string;
+}
+
 // ─── Ligne de commande à créer (formulaire CreateOrder) ───────────────────────
 export interface OrderLineItemDraft {
   product: WCProduct;
@@ -150,10 +164,11 @@ export interface CreateOrderPayload {
   customer_id: number;
   billing: Partial<WCBilling>;
   line_items: {
-    product_id: number;
-    quantity: number;
-    subtotal: string;         // prix original × qté (avant remise) — ex: "50000.00"
-    total: string;            // prix remisé × qté (ce qui est facturé) — ex: "45000.00"
+    product_id:   number;
+    variation_id?: number;    // obligatoire si produit variable
+    quantity:     number;
+    subtotal:     string;     // prix original × qté (avant remise) — ex: "50000.00"
+    total:        string;     // prix remisé × qté (ce qui est facturé) — ex: "45000.00"
   }[];
   payment_method: string;
   payment_method_title: string;

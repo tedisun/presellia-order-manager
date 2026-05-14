@@ -1,15 +1,24 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, RefreshControl, ScrollView, LayoutAnimation,
-  Platform, UIManager,
+  Platform, UIManager, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BRANDING } from '@config/branding';
 import { fetchOrders } from '@services/woocommerce';
+
+const ORDERS_CACHE_KEY = '@presellia_orders_cache';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — cache considéré frais
+
+interface OrdersCache {
+  orders:    WCOrder[];
+  updatedAt: number;
+}
 import OrderRow from '../components/OrderRow';
 import SearchBar from '@components/SearchBar';
 import EmptyState from '@components/EmptyState';
@@ -219,34 +228,75 @@ export default function OrdersListScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [allOrders, setAllOrders] = useState<WCOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]     = useState(true);   // true seulement si pas de cache
+  const [syncing, setSyncing]     = useState(false);  // refresh silencieux en arrière-plan
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch]       = useState('');
   const [activeStatus, setActiveStatus] = useState<OrderStatus | 'any'>('any');
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [lastUpdate, setLastUpdate]     = useState<Date | null>(null);
+  const [filtersOpen, setFiltersOpen]   = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async (q = search) => {
+  // Lit le cache AsyncStorage et affiche les données immédiatement sans spinner
+  const loadFromCache = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(ORDERS_CACHE_KEY);
+      if (!raw) return false;
+      const cached: OrdersCache = JSON.parse(raw);
+      if (cached.orders?.length > 0) {
+        setAllOrders(cached.orders);
+        setLastUpdate(new Date(cached.updatedAt));
+        setLoading(false);
+        return true;
+      }
+    } catch {/* ignore */}
+    return false;
+  }, []);
+
+  const saveCache = useCallback(async (orders: WCOrder[]) => {
+    try {
+      const payload: OrdersCache = { orders, updatedAt: Date.now() };
+      await AsyncStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(payload));
+    } catch {/* ignore */}
+  }, []);
+
+  // Appel réseau : silencieux si cache présent (syncing), bloquant si aucun cache
+  const fetchFromApi = useCallback(async (q = '') => {
     try {
       const data = await fetchOrders({ search: q || undefined });
       setAllOrders(data);
       setLastUpdate(new Date());
+      saveCache(data);
     } catch {
       // garder les données précédentes
     } finally {
       setLoading(false);
+      setSyncing(false);
       setRefreshing(false);
     }
-  }, [search]);
+  }, [saveCache]);
 
-  useEffect(() => { load(); }, []);
-
+  // Mount : cache d'abord, puis refresh silencieux
   useEffect(() => {
-    const timer = setTimeout(() => load(search), 400);
-    return () => clearTimeout(timer);
-  }, [search]);
+    (async () => {
+      const hadCache = await loadFromCache();
+      if (hadCache) {
+        setSyncing(true);
+      }
+      await fetchFromApi('');
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const onRefresh = () => { setRefreshing(true); load(); };
+  // Recherche avec debounce — toujours depuis l'API (la recherche texte n'est pas cachée)
+  useEffect(() => {
+    if (search === '') return; // le load initial couvre déjà search=''
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => fetchFromApi(search), 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [search, fetchFromApi]);
+
+  const onRefresh = () => { setRefreshing(true); fetchFromApi(search); };
 
   const toggleFilters = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -266,7 +316,7 @@ export default function OrdersListScreen() {
   const flatData: (OrderGroup | WCOrder)[] = [];
   groups.forEach((group) => { flatData.push(group); flatData.push(...group.data); });
 
-  if (loading) return <LoadingSpinner fullScreen message="Chargement des commandes…" />;
+  if (loading && allOrders.length === 0) return <LoadingSpinner fullScreen message="Chargement des commandes…" />;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -283,9 +333,13 @@ export default function OrdersListScreen() {
             )}
           </TouchableOpacity>
         </View>
-        <Text style={styles.headerMeta}>
-          {allOrders.length} commande{allOrders.length !== 1 ? 's' : ''} · Mis à jour à {formatTime(lastUpdate)}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={styles.headerMeta}>
+            {allOrders.length} commande{allOrders.length !== 1 ? 's' : ''}
+            {lastUpdate ? ` · Mis à jour à ${formatTime(lastUpdate)}` : ''}
+          </Text>
+          {syncing && <ActivityIndicator size="small" color={colors.primary} style={{ transform: [{ scale: 0.65 }] }} />}
+        </View>
       </View>
 
       {/* ── Filtres dépliables ── */}

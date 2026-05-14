@@ -4,7 +4,7 @@
 
 import { USE_MOCK, WC_API_PATH, PPB_API_PATH, ORDERS_PER_PAGE, CUSTOMERS_PER_PAGE, PRODUCTS_PER_PAGE } from '@config/constants';
 import { Storage } from './storage';
-import type { WCOrder, WCCustomer, WCProduct, CreateOrderPayload, DashboardStats, OrderStatus } from '@app-types/woocommerce';
+import type { WCOrder, WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, DashboardStats, OrderStatus } from '@app-types/woocommerce';
 import type { DashboardPeriod } from '@config/constants';
 
 // ─── Erreurs ──────────────────────────────────────────────────────────────────
@@ -155,6 +155,35 @@ export async function createOrder(payload: CreateOrderPayload): Promise<WCOrder>
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchProductVariations(productId: number): Promise<WCProductVariation[]> {
+  if (USE_MOCK) {
+    const { simulateDelay } = await import('@modules/orders/mock/ordersMock');
+    return simulateDelay<WCProductVariation[]>([
+      {
+        id: productId * 100 + 1, status: 'publish', sku: '',
+        price: '25000', regular_price: '25000', sale_price: '',
+        stock_status: 'instock', stock_quantity: null,
+        attributes: [{ id: 1, name: 'Durée', option: '1 an' }],
+      },
+      {
+        id: productId * 100 + 2, status: 'publish', sku: '',
+        price: '15000', regular_price: '15000', sale_price: '',
+        stock_status: 'instock', stock_quantity: null,
+        attributes: [{ id: 1, name: 'Durée', option: '6 mois' }],
+      },
+      {
+        id: productId * 100 + 3, status: 'publish', sku: '',
+        price: '8000', regular_price: '8000', sale_price: '',
+        stock_status: 'instock', stock_quantity: null,
+        attributes: [{ id: 1, name: 'Durée', option: '1 mois' }],
+      },
+    ], 300);
+  }
+  return wcFetch<WCProductVariation[]>(
+    `${WC_API_PATH}/products/${productId}/variations?per_page=50&status=publish&orderby=menu_order&order=asc`
+  );
 }
 
 // ─── Clients ──────────────────────────────────────────────────────────────────

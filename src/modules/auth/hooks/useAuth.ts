@@ -84,6 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await Storage.saveCredentials(credentials);
       await Storage.saveUser(user);
       setState({ isAuthenticated: true, isLoading: false, user, error: null });
+
+      // Enregistrement push token silencieux — jamais bloquant
+      import('@services/notifications').then(({ registerPushToken }) => registerPushToken());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erreur de connexion';
       setState((s) => ({ ...s, isLoading: false, error: message }));
