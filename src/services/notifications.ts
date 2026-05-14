@@ -8,68 +8,82 @@ import { logger } from '@services/logger';
 const NOTIF_STORAGE_KEY = '@presellia_notifications';
 const MAX_STORED = 100;
 
-// ID du projet Expo — doit correspondre à extra.eas.projectId dans app.json
+// ID du projet Expo — obligatoire depuis SDK 49+ (app.json > extra.eas.projectId)
 const EXPO_PROJECT_ID = '71dc7ad9-2268-4048-af64-a1b55781fa9a';
 
-// ─── Push token ──────────────────────────────────────────────────────────────
+// ─── Handler de présentation (doit être déclaré AVANT tout listener) ──────────
+// Requis pour que les notifications s'affichent quand l'app est au premier plan.
+// Sans ce handler, les notifications iOS/Android sont silencieusement ignorées.
+export function setupNotificationDisplayHandler(): void {
+  if (Platform.OS === 'web' || USE_MOCK) return;
+  import('expo-notifications').then((Notifications) => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert:  true,
+        shouldShowBanner: true,
+        shouldShowList:   true,
+        shouldPlaySound:  true,
+        shouldSetBadge:   true,
+        priority: Notifications.AndroidNotificationPriority?.HIGH,
+      }),
+    });
+  }).catch(() => {});
+}
 
-/**
- * Demande la permission, obtient le token Expo Push, l'enregistre
- * localement et le pousse vers le mu-plugin WordPress (pom/v1).
- * Silencieux en cas d'échec — jamais bloquant au démarrage.
- */
-export async function registerPushToken(): Promise<void> {
-  if (USE_MOCK || Platform.OS === 'web') {
-    logger.info('push', `Skipped (mock=${USE_MOCK}, platform=${Platform.OS})`);
-    return;
-  }
-
+// ─── Canal Android (obligatoire Android 8+) ───────────────────────────────────
+async function ensureAndroidChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
   try {
     const Notifications = await import('expo-notifications');
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Commandes',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#7C3AED',
+    });
+  } catch {}
+}
+
+// ─── Enregistrement du token Expo Push ────────────────────────────────────────
+export async function registerPushToken(): Promise<void> {
+  if (USE_MOCK || Platform.OS === 'web') return;
+  try {
+    const Notifications = await import('expo-notifications');
+    await ensureAndroidChannel();
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-    logger.info('push', `Permission actuelle: ${existingStatus}`);
-
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
-      logger.info('push', `Permission après demande: ${status}`);
     }
+    if (finalStatus !== 'granted') return;
 
-    if (finalStatus !== 'granted') {
-      logger.warn('push', 'Permission refusée — aucun token envoyé');
-      return;
-    }
-
-    // IMPORTANT : projectId obligatoire depuis Expo SDK 49+
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: EXPO_PROJECT_ID,
-    });
+    // projectId obligatoire depuis Expo SDK 49+
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId: EXPO_PROJECT_ID });
     const token = tokenData.data;
-    logger.info('push', `Token obtenu: ${token.slice(0, 40)}…`);
+    logger.info('push', `Token: ${token.slice(0, 40)}…`);
 
     await Storage.savePushToken(token);
 
     const creds = await Storage.getCredentials();
     if (!creds) {
-      logger.warn('push', 'Pas de credentials — token non envoyé à WordPress');
+      logger.warn('push', 'Pas de credentials — token non envoyé à WP');
       return;
     }
 
-    const basicAuth = 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`);
-    const url = `${creds.store_url}${POM_API_PATH}/register-token`;
-    logger.info('push', `Envoi token vers ${url}`);
-
-    const res = await fetch(url, {
+    const res = await fetch(`${creds.store_url}${POM_API_PATH}/register-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: basicAuth },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`),
+      },
       body: JSON.stringify({ token, platform: Platform.OS }),
     });
-
     if (!res.ok) {
-      const body = await res.text().catch(() => '(vide)');
-      logger.error('push', `Erreur WP ${res.status}: ${body.slice(0, 150)}`);
+      const body = await res.text().catch(() => '');
+      logger.error('push', `Erreur WP ${res.status}: ${body.slice(0, 100)}`);
     } else {
       logger.info('push', 'Token enregistré dans WordPress ✓');
     }
@@ -78,39 +92,75 @@ export async function registerPushToken(): Promise<void> {
   }
 }
 
-/** Vérifie l'état du mu-plugin pom/v1 côté WordPress (pour l'écran diagnostic). */
+// ─── Vérification état mu-plugin (pour écran diagnostic) ─────────────────────
 export async function checkPomStatus(): Promise<{
-  reachable: boolean;
-  registered: boolean;
-  token_count?: number;
-  error?: string;
+  reachable: boolean; registered: boolean; token_count?: number; error?: string;
 }> {
-  if (USE_MOCK || Platform.OS === 'web') {
-    return { reachable: false, registered: false, error: 'Mode mock ou web' };
-  }
+  if (USE_MOCK || Platform.OS === 'web') return { reachable: false, registered: false, error: 'Mock/Web' };
   try {
     const creds = await Storage.getCredentials();
     if (!creds) return { reachable: false, registered: false, error: 'Pas de credentials' };
-
-    const basicAuth = 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`);
     const res = await fetch(`${creds.store_url}${POM_API_PATH}/status`, {
-      headers: { Authorization: basicAuth },
+      headers: { Authorization: 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`) },
     });
-    if (!res.ok) {
-      return { reachable: false, registered: false, error: `HTTP ${res.status}` };
-    }
+    if (!res.ok) return { reachable: false, registered: false, error: `HTTP ${res.status}` };
     const json = await res.json() as { active?: boolean; registered_tokens?: number; user_has_token?: boolean };
-    return {
-      reachable:   !!json.active,
-      registered:  !!json.user_has_token,
-      token_count: json.registered_tokens,
-    };
+    return { reachable: !!json.active, registered: !!json.user_has_token, token_count: json.registered_tokens };
   } catch (err) {
     return { reachable: false, registered: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-// ─── Stockage local des notifications ────────────────────────────────────────
+// ─── Listeners (à appeler une seule fois depuis AppNavigator) ─────────────────
+// Retourne une fonction de nettoyage à appeler lors du démontage.
+export function initNotificationListeners(
+  onOrderTap: (orderId: number) => void
+): () => void {
+  if (Platform.OS === 'web' || USE_MOCK) return () => {};
+
+  let receivedSub: { remove(): void } | null = null;
+  let responseSub:  { remove(): void } | null = null;
+
+  import('expo-notifications').then((Notifications) => {
+    // Notification reçue en foreground → stocker + afficher
+    receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+      const { title = '', body = '', data = {} } = notification.request.content;
+      const appNotif = expoPayloadToNotification(
+        notification.request.identifier,
+        title ?? '',
+        body ?? '',
+        data as Record<string, unknown>
+      );
+      storeNotification(appNotif).catch(() => {});
+    });
+
+    // Tap sur une notification → naviguer vers la commande
+    responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, unknown>;
+      const { title = '', body = '' } = response.notification.request.content;
+
+      const appNotif = expoPayloadToNotification(
+        response.notification.request.identifier,
+        title ?? '',
+        body ?? '',
+        data
+      );
+      storeNotification(appNotif).catch(() => {});
+      markNotificationRead(appNotif.id).catch(() => {});
+
+      if (typeof data?.orderId === 'number') {
+        onOrderTap(data.orderId);
+      }
+    });
+  }).catch(() => {});
+
+  return () => {
+    receivedSub?.remove();
+    responseSub?.remove();
+  };
+}
+
+// ─── Stockage local ───────────────────────────────────────────────────────────
 
 export async function getStoredNotifications(): Promise<AppNotification[]> {
   try {
@@ -128,9 +178,7 @@ export async function storeNotification(notif: AppNotification): Promise<void> {
     const filtered = existing.filter((n) => n.id !== notif.id);
     const updated = [notif, ...filtered].slice(0, MAX_STORED);
     await AsyncStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(updated));
-  } catch {
-    // Silencieux
-  }
+  } catch {}
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
@@ -162,7 +210,7 @@ export function expoPayloadToNotification(
     type:       (data?.type as AppNotification['type']) ?? 'system',
     title:      title || 'Notification',
     body:       body  || '',
-    order_id:   typeof data?.order_id === 'number' ? data.order_id : undefined,
+    order_id:   typeof data?.orderId === 'number' ? data.orderId : undefined,
     read:       false,
     created_at: new Date().toISOString(),
   };

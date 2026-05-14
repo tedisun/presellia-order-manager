@@ -5,6 +5,44 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.3.0] — 2026-05-02
+
+### Ajouté
+- **Logo** : icône app branded (sac ✓ blanc, cercle violet, fond sombre) — icon.png / adaptive-icon.png / splash-icon.png / favicon.png
+- **Dashboard — Produits populaires** : section remplaçant "Stock faible" (inutile sur un catalogue 100% digital), affiche le top 5 des produits les plus vendus depuis les 50 dernières commandes
+- **Dashboard — KPIs Koko Analytics** : 2 nouvelles cartes Visiteurs et Pages vues (données déjà récupérées depuis v1.1.0 mais non affichées)
+
+### Corrigé
+- **Notifications push** : fix complet — handler foreground (`setNotificationHandler`) manquant → notifs silencieuses ; canal Android 8+ créé avec son + vibration ; token enregistré au login et envoyé au plugin mu ; navigation vers commande au tap
+- **Son notifications** : `shouldPlaySound: true` + canal Android avec `sound: 'default'`
+
+### Technique
+- `setupNotificationDisplayHandler()` doit être appelé AVANT tout listener (sinon iOS/Android ignore les notifications foreground)
+- `initNotificationListeners()` retourne une fonction de nettoyage (pattern Expo recommandé)
+- `bootstrapApp()` prend un callback `onOrderTap` pour router la navigation depuis les notifs
+
+---
+
+## [1.2.0] — 2026-05-02
+
+### Ajouté
+- **Cache produits 12 h** : catalogue entier chargé au démarrage (`fetchAllProducts()`, pagination 100/page), filtrage local immédiat dans le formulaire de commande — plus aucun appel réseau à la frappe
+- **Clients récents** : 15 derniers clients affichés avant toute recherche (écrans Clients + Création commande), alimentés depuis les commandes récentes (cache 2 h)
+- **Status picker libre** : bottom sheet dans le détail commande listant tous les statuts disponibles (standard + custom), remplace les boutons de transitions prédéfinis
+
+### Corrigé
+- **Produits tronqués** : suppression du `slice(0, 15)` + pagination complète — les 60+ produits sont tous accessibles
+- **Clients introuvables** : `CUSTOMERS_PER_PAGE` 20 → 100 ; accélère la recherche serveur
+
+### Technique
+- Nouveau service `src/services/cache.ts` (cache TTL en mémoire)
+- Nouveau `src/navigation/navigationRef.ts` (navigation externe depuis notifications)
+- `ALL_ORDER_STATUSES` dans `constants.ts` — source unique pour le picker et les labels
+- `OrderStatus` étendu pour accepter les statuts WC personnalisés `(string & {})`
+- Bootstrap au démarrage : préchargement produits + enregistrement token push à la connexion
+
+---
+
 ## [1.1.0] — 2026-04-16
 
 ### Ajouté

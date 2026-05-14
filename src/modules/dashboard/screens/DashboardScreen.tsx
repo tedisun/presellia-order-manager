@@ -13,13 +13,13 @@ import { BRANDING } from '@config/branding';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
 import { useAuth } from '@modules/auth/hooks/useAuth';
-import { fetchDashboardStats, fetchOrders, fetchLowStockProducts, fetchSiteVisits } from '@services/woocommerce';
+import { fetchDashboardStats, fetchOrders, fetchTopProducts, fetchSiteVisits } from '@services/woocommerce';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
 import LoadingSpinner from '@components/LoadingSpinner';
 import UpdateBanner from '@modules/updates/components/UpdateBanner';
 import { useUpdateChecker } from '@modules/updates/hooks/useUpdateChecker';
-import type { DashboardStats, WCOrder, WCProduct } from '@app-types/woocommerce';
+import type { DashboardStats, WCOrder } from '@app-types/woocommerce';
 import type { DashboardPeriod } from '@config/constants';
 import type { MainTabParamList, OrdersStackParamList } from '@navigation/types';
 
@@ -56,15 +56,11 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
   sectionTitleRow:{ flexDirection: 'row', alignItems: 'center', gap: BRANDING.spacing.sm },
   sectionTitle:   { fontSize: BRANDING.fonts.sizeMD, fontWeight: BRANDING.fonts.weightSemiBold, color: c.textPrimary },
   seeAll:         { fontSize: BRANDING.fonts.sizeSM, color: c.primary },
-  alertBadge:     { backgroundColor: c.warning + '33', borderRadius: BRANDING.radius.full, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  alertBadgeText: { fontSize: BRANDING.fonts.sizeXS, fontWeight: BRANDING.fonts.weightBold, color: c.warning },
-  stockRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: BRANDING.spacing.sm, gap: BRANDING.spacing.sm },
-  stockRowBorder: { borderBottomWidth: 1, borderBottomColor: c.border },
-  stockLeft:      { flex: 1 },
-  stockName:      { fontSize: BRANDING.fonts.sizeSM, color: c.textPrimary, fontWeight: BRANDING.fonts.weightMedium },
-  stockSku:       { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted, marginTop: 2 },
-  stockQtyBadge:  { borderRadius: BRANDING.radius.sm, paddingHorizontal: BRANDING.spacing.sm, paddingVertical: 3 },
-  stockQtyText:   { fontSize: BRANDING.fonts.sizeXS, fontWeight: BRANDING.fonts.weightSemiBold },
+  topRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: BRANDING.spacing.sm, gap: BRANDING.spacing.sm },
+  topRowBorder:   { borderBottomWidth: 1, borderBottomColor: c.border },
+  topRank:        { width: 22, height: 22, borderRadius: 11, backgroundColor: c.primary + '22', alignItems: 'center', justifyContent: 'center' },
+  topRankText:    { fontSize: BRANDING.fonts.sizeXS, fontWeight: BRANDING.fonts.weightBold, color: c.primary },
+  topName:        { flex: 1, fontSize: BRANDING.fonts.sizeSM, color: c.textPrimary, fontWeight: BRANDING.fonts.weightMedium },
   statusGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: BRANDING.spacing.sm, marginTop: BRANDING.spacing.xs },
   statusItem:     { alignItems: 'center', minWidth: 60 },
   statusCount:    { fontSize: BRANDING.fonts.sizeLG, fontWeight: BRANDING.fonts.weightBold },
@@ -104,7 +100,7 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [siteVisits, setSiteVisits] = useState<{ visitors: number; pageviews: number } | null>(null);
   const [recentOrders, setRecentOrders] = useState<WCOrder[]>([]);
-  const [lowStockProducts, setLowStockProducts] = useState<WCProduct[]>([]);
+  const [topProducts, setTopProducts] = useState<{ name: string; price: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showPeriodMenu, setShowPeriodMenu] = useState(false);
@@ -116,15 +112,15 @@ export default function DashboardScreen() {
       // fetchOrders est critique (affiche les dernières commandes même si les stats échouent).
       // fetchDashboardStats et fetchLowStockProducts ont leur propre catch — leur échec
       // n'empêche pas le reste de s'afficher (ex: permissions insuffisantes sur /reports).
-      const [s, orders, lowStock, visits] = await Promise.all([
+      const [s, orders, top, visits] = await Promise.all([
         fetchDashboardStats(period).catch(() => null),
         fetchOrders({ per_page: 5 }),
-        fetchLowStockProducts().catch(() => [] as import('@app-types/woocommerce').WCProduct[]),
+        fetchTopProducts(5).catch(() => []),
         fetchSiteVisits(period).catch(() => null),
       ]);
       setStats(s);
       setRecentOrders(orders.slice(0, 5));
-      setLowStockProducts(lowStock);
+      setTopProducts(top.map((p) => ({ name: p.name, price: p.price })));
       setSiteVisits(visits);
     } catch (err) {
       // fetchOrders a échoué — erreur réseau ou auth
@@ -260,6 +256,23 @@ export default function DashboardScreen() {
           />
         </View>
 
+        <View style={styles.kpiRow}>
+          <KpiCard
+            label="Visiteurs"
+            value={<Text style={styles.kpiNumber}>{siteVisits?.visitors ?? '—'}</Text>}
+            iconName="eye-outline"
+            accent={colors.accent}
+            kpiStyles={kpiStyles}
+          />
+          <KpiCard
+            label="Pages vues"
+            value={<Text style={styles.kpiNumber}>{siteVisits?.pageviews ?? '—'}</Text>}
+            iconName="document-text-outline"
+            accent={colors.textMuted}
+            kpiStyles={kpiStyles}
+          />
+        </View>
+
         {/* Status breakdown — only when stats loaded */}
         {stats && (
           <View style={styles.section}>
@@ -281,31 +294,24 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Low stock products */}
-        {lowStockProducts.length > 0 && (
+        {/* Top products */}
+        {topProducts.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Stock faible</Text>
-                <View style={styles.alertBadge}>
-                  <Text style={styles.alertBadgeText}>{lowStockProducts.length}</Text>
-                </View>
+                <Ionicons name="star-outline" size={16} color={colors.warning} />
+                <Text style={styles.sectionTitle}>Produits populaires</Text>
               </View>
             </View>
-            {lowStockProducts.map((product, idx) => {
-              const isCritical = (product.stock_quantity ?? 0) <= 1;
-              const isLast = idx === lowStockProducts.length - 1;
+            {topProducts.map((p, idx) => {
+              const isLast = idx === topProducts.length - 1;
               return (
-                <View key={product.id} style={[styles.stockRow, !isLast && styles.stockRowBorder]}>
-                  <View style={styles.stockLeft}>
-                    <Text style={styles.stockName} numberOfLines={1}>{product.name}</Text>
-                    <Text style={styles.stockSku}>{product.sku}</Text>
+                <View key={idx} style={[styles.topRow, !isLast && styles.topRowBorder]}>
+                  <View style={styles.topRank}>
+                    <Text style={styles.topRankText}>{idx + 1}</Text>
                   </View>
-                  <View style={[styles.stockQtyBadge, { backgroundColor: isCritical ? colors.error + '25' : colors.warning + '25' }]}>
-                    <Text style={[styles.stockQtyText, { color: isCritical ? colors.error : colors.warning }]}>
-                      {product.stock_quantity} restant{(product.stock_quantity ?? 0) > 1 ? 's' : ''}
-                    </Text>
-                  </View>
+                  <Text style={styles.topName} numberOfLines={1}>{p.name}</Text>
+                  <CurrencyText amount={p.price} size="sm" />
                 </View>
               );
             })}

@@ -22,12 +22,37 @@ export const POM_API_PATH = '/wp-json/pom/v1'; // endpoint push token (mu-plugin
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
 export const GITHUB_REPO = 'tedisun/presellia-order-manager';
-export const APP_VERSION = '1.1.0'; // toujours synchronisé avec app.json > version
+export const APP_VERSION = '1.3.0'; // toujours synchronisé avec app.json > version
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
-export const ORDERS_PER_PAGE = 50;
-export const CUSTOMERS_PER_PAGE = 20;
-export const PRODUCTS_PER_PAGE = 50;
+export const ORDERS_PER_PAGE    = 50;
+export const CUSTOMERS_PER_PAGE = 100; // max WC API (était 20)
+export const PRODUCTS_PER_PAGE  = 100; // par page lors du fetch toutes-pages
+
+// ─── Cache ────────────────────────────────────────────────────────────────────
+export const PRODUCTS_CACHE_TTL_MS      = 12 * 60 * 60 * 1000; // 12 h
+export const RECENT_CUSTOMERS_CACHE_TTL =  2 * 60 * 60 * 1000; //  2 h
+
+// ─── Statuts de commande ──────────────────────────────────────────────────────
+// Source unique pour le status picker (OrderDetailScreen) et StatusBadge.
+// Ajouter ici les statuts personnalisés du site (ex : plugins Order Status Manager).
+export const ALL_ORDER_STATUSES: { slug: string; label: string }[] = [
+  { slug: 'pending',    label: 'En attente de paiement' },
+  { slug: 'processing', label: 'En cours' },
+  { slug: 'on-hold',   label: 'En pause' },
+  { slug: 'completed', label: 'Terminée' },
+  { slug: 'cancelled', label: 'Annulée' },
+  { slug: 'refunded',  label: 'Remboursée' },
+  { slug: 'failed',    label: 'Échouée' },
+  // ── Statuts personnalisés Presellia ─────────────────────────────────────────
+  // Décommenter / ajouter selon les statuts configurés sur presellia.com :
+  // { slug: 'wc-awaiting-shipment', label: 'En attente d\'expédition' },
+  // { slug: 'wc-delivered',         label: 'Livré' },
+];
+
+export function getStatusLabel(slug: string): string {
+  return ALL_ORDER_STATUSES.find((s) => s.slug === slug)?.label ?? slug;
+}
 
 // ─── Périodes dashboard ───────────────────────────────────────────────────────
 export type DashboardPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year';

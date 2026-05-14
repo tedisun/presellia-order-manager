@@ -12,8 +12,7 @@ import { BRANDING } from '@config/branding';
 import { useAuth } from '@modules/auth/hooks/useAuth';
 import {
   fetchCustomers, fetchGuestCustomers, fetchPartnerProducts,
-  createOrder, createCustomer, syncCustomerPhone, fetchTopProducts,
-  fetchProductVariations,
+  createOrder, createCustomer, syncCustomerPhone, fetchTopProducts, fetchProductVariations,
 } from '@services/woocommerce';
 import CurrencyText from '@components/CurrencyText';
 import SearchBar from '@components/SearchBar';
@@ -28,15 +27,15 @@ type NavProp = NativeStackNavigationProp<OrdersStackParamList, 'CreateOrder'>;
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 interface LineItemDraft {
   product:      WCProduct;
-  variation?:   WCProductVariation;   // défini si produit variable
+  variation?:   WCProductVariation;
+  unit_price:   number;   // prix effectif (variation ou produit, partenaire ou standard)
   quantity:     number;
   discountType: 'none' | 'percent' | 'fixed';
   discountValue: number;
 }
 
-/** Étiquette courte de la variation (ex: "1 an", "6 mois — Home") */
 function variationLabel(v: WCProductVariation): string {
-  return v.attributes.map((a) => a.option).join(' · ') || `#${v.id}`;
+  return v.attributes.map(a => a.option).join(' · ') || `Variante #${v.id}`;
 }
 
 interface PaymentChoice {
@@ -54,14 +53,8 @@ const OFFLINE_METHODS: { value: OfflinePaymentDetail; label: string }[] = [
   { value: 'autre',        label: 'Autre' },
 ];
 
-function getLineUnitPrice(li: LineItemDraft): number {
-  // Priorité : prix variation > prix produit (partner ou standard)
-  if (li.variation) return parseFloat(li.variation.partner_price || li.variation.price || '0');
-  return parseFloat(li.product.price || '0');
-}
-
 function getLineTotal(li: LineItemDraft): number {
-  const base = getLineUnitPrice(li) * li.quantity;
+  const base = li.unit_price * li.quantity;
   if (li.discountType === 'percent') return base * (1 - li.discountValue / 100);
   if (li.discountType === 'fixed')   return Math.max(0, base - li.discountValue);
   return base;
@@ -374,7 +367,6 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     width: 56,
     textAlign: 'center',
   },
-  cartItemVariation: { fontSize: BRANDING.fonts.sizeXS, color: c.primary, marginTop: 1 },
   cartTotal: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -386,39 +378,6 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     borderColor: c.border,
   },
   cartTotalLabel: { fontSize: BRANDING.fonts.sizeMD, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
-  // Variation modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: c.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: BRANDING.spacing.lg,
-    gap: BRANDING.spacing.md,
-    maxHeight: '80%',
-  },
-  modalTitle:   { fontSize: BRANDING.fonts.sizeLG, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
-  modalProduct: { fontSize: BRANDING.fonts.sizeSM, color: c.textSecondary },
-  variationRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: c.background,
-    borderRadius: BRANDING.radius.md,
-    padding: BRANDING.spacing.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    gap: BRANDING.spacing.sm,
-  },
-  variationRowOut: { opacity: 0.45 },
-  variationLabel: { flex: 1, fontSize: BRANDING.fonts.sizeMD, color: c.textPrimary },
-  variationSku:   { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted, marginTop: 2 },
-  outOfStockTag:  { fontSize: BRANDING.fonts.sizeXS, color: c.error },
-  modalCancel: {
-    paddingVertical: BRANDING.spacing.md,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: c.border,
-    marginTop: BRANDING.spacing.xs,
-  },
-  modalCancelText: { fontSize: BRANDING.fonts.sizeMD, color: c.textSecondary },
   // Payment step
   paymentCard: {
     flexDirection: 'row',
@@ -474,6 +433,51 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     borderColor: c.primary + '55',
   },
   recapTotalLabel: { fontSize: BRANDING.fonts.sizeLG, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
+  // Variation picker modal
+  variantModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  variantSheet: {
+    backgroundColor: c.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: BRANDING.spacing.lg,
+    paddingBottom: BRANDING.spacing.xl,
+    maxHeight: '80%',
+  },
+  variantHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: BRANDING.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    marginBottom: BRANDING.spacing.sm,
+  },
+  variantTitle: {
+    fontSize: BRANDING.fonts.sizeLG,
+    fontWeight: BRANDING.fonts.weightBold,
+    color: c.textPrimary,
+    flex: 1,
+    marginRight: BRANDING.spacing.sm,
+  },
+  variantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: BRANDING.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    gap: BRANDING.spacing.md,
+  },
+  variantRowOutOfStock: { opacity: 0.45 },
+  variantRowInfo: { flex: 1 },
+  variantLabel: { fontSize: BRANDING.fonts.sizeMD, color: c.textPrimary },
+  variantAttrText: { fontSize: BRANDING.fonts.sizeSM, color: c.textSecondary, marginTop: 2 },
+  variantOutOfStockBadge: { fontSize: BRANDING.fonts.sizeXS, color: c.error, marginTop: 2 },
+  // Cart item variation tag
+  cartVariantTag: { fontSize: BRANDING.fonts.sizeXS, color: c.textSecondary, marginTop: 1 },
   submitBtn: {
     backgroundColor: c.primary,
     borderRadius: BRANDING.radius.md,
@@ -542,7 +546,7 @@ export default function CreateOrderScreen() {
           product_id:   li.product.id,
           ...(li.variation ? { variation_id: li.variation.id } : {}),
           quantity:     li.quantity,
-          subtotal:     (getLineUnitPrice(li) * li.quantity).toFixed(2),
+          subtotal:     (li.unit_price * li.quantity).toFixed(2),
           total:        getLineTotal(li).toFixed(2),
         })),
         payment_method:       payment.mode === 'link' ? 'woocommerce_payments' : 'offline',
@@ -1127,22 +1131,32 @@ function StepProducts({
   const [loadingTop, setLoadingTop] = useState(true);
 
   // Variation picker state
-  const [pickerProduct, setPickerProduct] = useState<WCProduct | null>(null);
-  const [variations, setVariations]       = useState<WCProductVariation[]>([]);
-  const [loadingVars, setLoadingVars]     = useState(false);
+  const [variationProduct, setVariationProduct] = useState<WCProduct | null>(null);
+  const [variations, setVariations] = useState<WCProductVariation[]>([]);
+  const [variationLoading, setVariationLoading] = useState(false);
+  const [showVariationModal, setShowVariationModal] = useState(false);
 
   const isPartner = customer?.role === 'partner';
 
+  // Catalogue produits : cache-first (TTL 12h, préchargé au démarrage).
+  // Si absent du cache, fetch complet paginé. Filtrage client-side.
   React.useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const { fetchProducts } = await import('@services/woocommerce');
-        const regular = await fetchProducts();
+        const { fetchAllProducts, fetchPartnerProducts: fetchPP } = await import('@services/woocommerce');
+        const { Cache, CACHE_KEYS } = await import('@services/cache');
+
+        let regular = Cache.get<import('@app-types/woocommerce').WCProduct[]>(CACHE_KEYS.ALL_PRODUCTS);
+        if (!regular) {
+          regular = await fetchAllProducts();
+        }
+
         if (isPartner) {
-          const partnerList = await fetchPartnerProducts();
+          let partnerList = Cache.get<import('@app-types/woocommerce').WCProduct[]>(CACHE_KEYS.PARTNER_PRODUCTS);
+          if (!partnerList) partnerList = await fetchPP().catch(() => []);
           const merged = regular.map((p) => {
-            const pp = partnerList.find((x) => x.id === p.id);
+            const pp = partnerList!.find((x) => x.id === p.id);
             return pp ? { ...p, partner_price: pp.partner_price } : p;
           });
           setAllProducts(merged);
@@ -1156,10 +1170,12 @@ function StepProducts({
     load();
   }, [isPartner]);
 
+  // Charger les produits fréquemment commandés une seule fois
   React.useEffect(() => {
     fetchTopProducts(6).then(setTopProducts).catch(() => {}).finally(() => setLoadingTop(false));
   }, []);
 
+  // Filtrage client-side par nom (+ SKU) — instantané, stable, sans appel réseau
   const q = query.trim().toLowerCase();
   const products = q.length >= 2
     ? allProducts.filter(p =>
@@ -1168,85 +1184,67 @@ function StepProducts({
       )
     : allProducts;
 
-  // Clé unique par ligne : product + variation
-  const lineKey = (li: LineItemDraft) =>
-    li.variation ? `${li.product.id}-${li.variation.id}` : String(li.product.id);
-
   const addSimpleProduct = (product: WCProduct) => {
-    const key = String(product.id);
-    const existing = items.find((li) => lineKey(li) === key);
+    const rawPrice = isPartner && product.partner_price ? product.partner_price : product.price;
+    const unit_price = parseFloat(rawPrice) || 0;
+    const existing = items.find((li) => li.product.id === product.id && !li.variation);
     if (existing) {
-      onChange(items.map((li) => lineKey(li) === key ? { ...li, quantity: li.quantity + 1 } : li));
+      onChange(items.map((li) =>
+        li.product.id === product.id && !li.variation ? { ...li, quantity: li.quantity + 1 } : li
+      ));
     } else {
-      onChange([...items, { product, quantity: 1, discountType: 'none', discountValue: 0 }]);
+      onChange([...items, { product, unit_price, quantity: 1, discountType: 'none', discountValue: 0 }]);
     }
-  };
-
-  const addVariation = (product: WCProduct, variation: WCProductVariation) => {
-    const key = `${product.id}-${variation.id}`;
-    const existing = items.find((li) => lineKey(li) === key);
-    if (existing) {
-      onChange(items.map((li) => lineKey(li) === key ? { ...li, quantity: li.quantity + 1 } : li));
-    } else {
-      // Injecter le partner_price si disponible sur le produit parent
-      const varWithPartner = isPartner && product.partner_price
-        ? { ...variation, partner_price: product.partner_price }
-        : variation;
-      onChange([...items, { product, variation: varWithPartner, quantity: 1, discountType: 'none', discountValue: 0 }]);
-    }
-    setPickerProduct(null);
   };
 
   const handleProductPress = async (product: WCProduct) => {
-    if (product.type !== 'variable') {
+    if (product.type === 'variable') {
+      setVariationProduct(product);
+      setVariations([]);
+      setVariationLoading(true);
+      setShowVariationModal(true);
+      try {
+        const vars = await fetchProductVariations(product.id);
+        setVariations(vars);
+      } catch {
+        setVariations([]);
+      } finally {
+        setVariationLoading(false);
+      }
+    } else {
       addSimpleProduct(product);
-      return;
-    }
-    // Produit variable : charger et afficher le picker
-    setPickerProduct(product);
-    setVariations([]);
-    setLoadingVars(true);
-    try {
-      const vars = await fetchProductVariations(product.id);
-      setVariations(vars.filter((v) => v.status === 'publish'));
-    } catch {
-      Alert.alert('Erreur', 'Impossible de charger les variations.');
-      setPickerProduct(null);
-    } finally {
-      setLoadingVars(false);
     }
   };
 
-  const updateItem = (idx: number, patch: Partial<LineItemDraft>) => {
+  const addVariation = (variation: WCProductVariation) => {
+    if (!variationProduct) return;
+    const rawPrice = isPartner && variation.partner_price ? variation.partner_price : variation.price;
+    const unit_price = parseFloat(rawPrice) || 0;
+    const existing = items.find((li) => li.variation?.id === variation.id);
+    setShowVariationModal(false);
+    if (existing) {
+      onChange(items.map((li) =>
+        li.variation?.id === variation.id ? { ...li, quantity: li.quantity + 1 } : li
+      ));
+    } else {
+      onChange([...items, {
+        product: variationProduct,
+        variation,
+        unit_price,
+        quantity: 1,
+        discountType: 'none',
+        discountValue: 0,
+      }]);
+    }
+  };
+
+  const updateItem = (idx: number, patch: Partial<LineItemDraft>) =>
     onChange(items.map((li, i) => i === idx ? { ...li, ...patch } : li));
-  };
 
-  const removeItem = (idx: number) => {
+  const removeItem = (idx: number) =>
     onChange(items.filter((_, i) => i !== idx));
-  };
 
   const total = items.reduce((s, li) => s + getLineTotal(li), 0);
-
-  const productRowContent = (p: WCProduct) => (
-    <>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.productName}>{p.name}</Text>
-        {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
-        {p.type === 'variable' && (
-          <Text style={[styles.productSku, { color: colors.primary }]}>Variations disponibles ›</Text>
-        )}
-      </View>
-      {p.type !== 'variable' && (
-        <CurrencyText
-          amount={isPartner && p.partner_price ? p.partner_price : p.price}
-          size="sm"
-          bold={isPartner && !!p.partner_price}
-          color={isPartner && p.partner_price ? colors.success : undefined}
-        />
-      )}
-      <Text style={styles.addBtn}>+</Text>
-    </>
-  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -1262,6 +1260,7 @@ function StepProducts({
 
         <SearchBar value={query} onChangeText={setQuery} placeholder="Rechercher un produit…" />
 
+        {/* Fréquemment commandés — masqué pendant la recherche */}
         {!query && (
           <>
             <View style={styles.sectionHeader}>
@@ -1273,7 +1272,17 @@ function StepProducts({
             ) : topProducts.length > 0 ? (
               topProducts.map((p) => (
                 <TouchableOpacity key={`top-${p.id}`} style={styles.productRow} onPress={() => handleProductPress(p)}>
-                  {productRowContent(p)}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.productName}>{p.name}</Text>
+                    {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
+                  </View>
+                  <CurrencyText
+                    amount={isPartner && p.partner_price ? p.partner_price : p.price}
+                    size="sm"
+                    bold={isPartner && !!p.partner_price}
+                    color={isPartner && p.partner_price ? colors.success : undefined}
+                  />
+                  <Text style={styles.addBtn}>+</Text>
                 </TouchableOpacity>
               ))
             ) : null}
@@ -1286,24 +1295,80 @@ function StepProducts({
 
         {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: 12 }} />}
 
-        {products.slice(0, 15).map((p) => (
+        {products.map((p) => (
           <TouchableOpacity key={p.id} style={styles.productRow} onPress={() => handleProductPress(p)}>
-            {productRowContent(p)}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.productName}>{p.name}</Text>
+              {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
+            </View>
+            <CurrencyText
+              amount={isPartner && p.partner_price ? p.partner_price : p.price}
+              size="sm"
+              bold={isPartner && !!p.partner_price}
+              color={isPartner && p.partner_price ? colors.success : undefined}
+            />
+            <Text style={styles.addBtn}>+</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* ─── Variation picker modal ─── */}
+      <Modal visible={showVariationModal} transparent animationType="slide" onRequestClose={() => setShowVariationModal(false)}>
+        <View style={styles.variantModal}>
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setShowVariationModal(false)} />
+          <View style={styles.variantSheet}>
+            <View style={styles.variantHeader}>
+              <Text style={styles.variantTitle} numberOfLines={2}>{variationProduct?.name}</Text>
+              <TouchableOpacity onPress={() => setShowVariationModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {variationLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 32 }} />
+            ) : (
+              <ScrollView keyboardShouldPersistTaps="handled">
+                {variations.map((v) => {
+                  const outOfStock = v.stock_status === 'outofstock';
+                  const label = variationLabel(v);
+                  const price = isPartner && v.partner_price ? v.partner_price : v.price;
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[styles.variantRow, outOfStock && styles.variantRowOutOfStock]}
+                      onPress={() => !outOfStock && addVariation(v)}
+                      disabled={outOfStock}
+                    >
+                      <View style={styles.variantRowInfo}>
+                        <Text style={styles.variantLabel}>{label}</Text>
+                        {outOfStock && <Text style={styles.variantOutOfStockBadge}>Rupture de stock</Text>}
+                      </View>
+                      <CurrencyText
+                        amount={price}
+                        size="sm"
+                        bold={isPartner && !!v.partner_price}
+                        color={isPartner && v.partner_price ? colors.success : undefined}
+                      />
+                      {!outOfStock && <Ionicons name="add-circle-outline" size={22} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* ─── Sticky cart (always visible when items > 0) ─── */}
       {items.length > 0 && (
         <View style={styles.stickyCartPanel}>
           <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: BRANDING.spacing.sm }} keyboardShouldPersistTaps="handled">
             {items.map((li, idx) => (
-              <View key={lineKey(li)} style={styles.cartItem}>
+              <View key={`${li.product.id}-${li.variation?.id ?? 'simple'}`} style={styles.cartItem}>
                 <View style={styles.cartItemTop}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cartItemName} numberOfLines={1}>{li.product.name}</Text>
                     {li.variation && (
-                      <Text style={styles.cartItemVariation}>{variationLabel(li.variation)}</Text>
+                      <Text style={styles.cartVariantTag}>{variationLabel(li.variation)}</Text>
                     )}
                   </View>
                   <TouchableOpacity onPress={() => removeItem(idx)}>
@@ -1358,59 +1423,6 @@ function StepProducts({
           </View>
         </View>
       )}
-
-      {/* ─── Variation picker modal ─── */}
-      <Modal
-        visible={pickerProduct !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerProduct(null)}
-      >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPickerProduct(null)}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Choisir une variation</Text>
-            {pickerProduct && (
-              <Text style={styles.modalProduct}>{pickerProduct.name}</Text>
-            )}
-
-            {loadingVars ? (
-              <ActivityIndicator color={colors.primary} style={{ marginVertical: BRANDING.spacing.lg }} />
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {variations.map((v) => {
-                  const outOfStock = v.stock_status === 'outofstock';
-                  return (
-                    <TouchableOpacity
-                      key={v.id}
-                      style={[styles.variationRow, outOfStock && styles.variationRowOut, { marginBottom: BRANDING.spacing.sm }]}
-                      onPress={() => !outOfStock && pickerProduct && addVariation(pickerProduct, v)}
-                      disabled={outOfStock}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.variationLabel}>{variationLabel(v)}</Text>
-                        {v.sku ? <Text style={styles.variationSku}>{v.sku}</Text> : null}
-                        {outOfStock && <Text style={styles.outOfStockTag}>Rupture de stock</Text>}
-                      </View>
-                      {!outOfStock && (
-                        <CurrencyText
-                          amount={isPartner && v.partner_price ? v.partner_price : v.price}
-                          size="sm"
-                          bold={isPartner && !!v.partner_price}
-                          color={isPartner && v.partner_price ? colors.success : undefined}
-                        />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            <TouchableOpacity style={styles.modalCancel} onPress={() => setPickerProduct(null)}>
-              <Text style={styles.modalCancelText}>Annuler</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
@@ -1505,12 +1517,13 @@ function StepRecap({
 
       <View style={styles.recapSection}>
         <Text style={styles.recapLabel}>Articles ({items.length})</Text>
-        {items.map((li, i) => (
-          <View key={i} style={styles.recapItem}>
+        {items.map((li) => (
+          <View key={`${li.product.id}-${li.variation?.id ?? 'simple'}`} style={styles.recapItem}>
             <Text style={styles.recapItemName} numberOfLines={2}>
-              {li.product.name}
-              {li.variation ? ` — ${variationLabel(li.variation)}` : ''}
-              {' '}× {li.quantity}
+              {li.variation
+                ? `${li.product.name} — ${variationLabel(li.variation)}`
+                : li.product.name
+              } × {li.quantity}
             </Text>
             <CurrencyText amount={getLineTotal(li)} size="sm" />
           </View>

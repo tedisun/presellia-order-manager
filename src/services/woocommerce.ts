@@ -251,6 +251,32 @@ export async function fetchProducts(search?: string): Promise<WCProduct[]> {
   return wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${query}`);
 }
 
+// Récupère l'intégralité du catalogue publié en paginant toutes les pages (100/page).
+// Utilisé pour le cache produits au démarrage (TTL 12 h).
+export async function fetchAllProducts(): Promise<WCProduct[]> {
+  if (USE_MOCK) {
+    const { MOCK_PRODUCTS } = await import('@modules/orders/mock/productsMock');
+    const { simulateDelay: delay } = await import('@modules/orders/mock/ordersMock');
+    return delay([...MOCK_PRODUCTS]);
+  }
+  const all: WCProduct[] = [];
+  let page = 1;
+  while (true) {
+    const q = new URLSearchParams({
+      per_page: String(PRODUCTS_PER_PAGE),
+      page:     String(page),
+      status:   'publish',
+      orderby:  'title',
+      order:    'asc',
+    });
+    const batch = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${q}`);
+    all.push(...batch);
+    if (batch.length < PRODUCTS_PER_PAGE) break;
+    page++;
+  }
+  return all;
+}
+
 // Top products vendus sur la période (pour la section "Fréquemment commandés").
 // Agrège depuis les 50 dernières commandes — pas besoin de view_woocommerce_reports.
 export async function fetchTopProducts(limit = 6): Promise<WCProduct[]> {
@@ -313,7 +339,6 @@ export async function updateCustomerBilling(id: number, data: {
 }
 
 export async function fetchPartnerProducts(): Promise<WCProduct[]> {
-  // Retourne les produits avec prix partenaire via l'endpoint PPB
   if (USE_MOCK) {
     const { MOCK_PRODUCTS } = await import('@modules/orders/mock/productsMock');
     const { simulateDelay: delay } = await import('@modules/orders/mock/ordersMock');
