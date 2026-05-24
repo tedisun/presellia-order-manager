@@ -175,6 +175,7 @@ export interface CreateOrderPayload {
   payment_method_title: string;
   set_paid: boolean;
   status: OrderStatus;
+  currency?: string;
   meta_data: WCMeta[];
 }
 
@@ -185,6 +186,7 @@ export interface DashboardRevenue {
   month: number;
   quarter: number;
   year: number;
+  custom: number;
 }
 
 export interface DashboardOrderCounts {
@@ -247,4 +249,10 @@ export interface GithubRelease {
     browser_download_url: string;
     content_type: string;
   }[];
+}
+
+// ─── Statut de commande WooCommerce Dynamique ──────────────────────────────
+export interface WCOrderStatus {
+  slug: string;
+  name: string;
 }

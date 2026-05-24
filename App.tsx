@@ -46,7 +46,8 @@ function PushHandler() {
 
       // Notification reçue en foreground → stocker localement
       listenerRef.current = Notifications.addNotificationReceivedListener((notification) => {
-        const { title = '', body = '' } = notification.request.content;
+        const title = notification.request.content.title || '';
+        const body = notification.request.content.body || '';
         const data = (notification.request.content.data ?? {}) as Record<string, unknown>;
         const notif = expoPayloadToNotification(
           notification.request.identifier,
@@ -60,7 +61,8 @@ function PushHandler() {
       // Tap sur la notification (app en background ou fermée)
       responseListenerRef.current = Notifications.addNotificationResponseReceivedListener(
         (response) => {
-          const { title = '', body = '' } = response.notification.request.content;
+          const title = response.notification.request.content.title || '';
+          const body = response.notification.request.content.body || '';
           const data = (response.notification.request.content.data ?? {}) as Record<string, unknown>;
           const notif = expoPayloadToNotification(
             response.notification.request.identifier,

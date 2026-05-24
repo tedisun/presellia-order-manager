@@ -22,7 +22,7 @@ export const POM_API_PATH = '/wp-json/pom/v1'; // endpoint push token (mu-plugin
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
 export const GITHUB_REPO = 'tedisun/presellia-order-manager';
-export const APP_VERSION = '1.3.0'; // toujours synchronisé avec app.json > version
+export const APP_VERSION = '1.4.0'; // toujours synchronisé avec app.json > version
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 export const ORDERS_PER_PAGE    = 50;
@@ -45,17 +45,23 @@ export const ALL_ORDER_STATUSES: { slug: string; label: string }[] = [
   { slug: 'refunded',  label: 'Remboursée' },
   { slug: 'failed',    label: 'Échouée' },
   // ── Statuts personnalisés Presellia ─────────────────────────────────────────
-  // Décommenter / ajouter selon les statuts configurés sur presellia.com :
-  // { slug: 'wc-awaiting-shipment', label: 'En attente d\'expédition' },
-  // { slug: 'wc-delivered',         label: 'Livré' },
+  { slug: 'souscription-actv', label: 'Souscription Activée' },
+  { slug: 'checkout-draft', label: 'Brouillon' },
 ];
 
 export function getStatusLabel(slug: string): string {
-  return ALL_ORDER_STATUSES.find((s) => s.slug === slug)?.label ?? slug;
+  if (!slug) return '';
+  const cleanSlug = slug.replace(/^wc-/, '');
+  const found = ALL_ORDER_STATUSES.find((s) => s.slug === cleanSlug || s.slug === slug);
+  if (found) return found.label;
+
+  const clean = cleanSlug.replace(/-/g, ' ');
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
+
 // ─── Périodes dashboard ───────────────────────────────────────────────────────
-export type DashboardPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year';
+export type DashboardPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
 
 export const DASHBOARD_PERIODS: { key: DashboardPeriod; label: string }[] = [
   { key: 'today',   label: "Auj." },
@@ -63,4 +69,5 @@ export const DASHBOARD_PERIODS: { key: DashboardPeriod; label: string }[] = [
   { key: 'month',   label: "Mois" },
   { key: 'quarter', label: "3 M"  },
   { key: 'year',    label: "An"   },
+  { key: 'custom',  label: "Perso" },
 ];

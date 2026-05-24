@@ -29,9 +29,9 @@ export interface BrandColors {
 
 // Couleurs partagées entre les deux thèmes (marque + statuts)
 const shared = {
-  primary:     '#7C3AED',
-  primaryDark: '#6D28D9',
-  accent:      '#F97316',
+  primary:     '#8B5CF6',
+  primaryDark: '#7C3AED',
+  accent:      '#F43F5E',
   statusPending:    '#F59E0B',
   statusProcessing: '#3B82F6',
   statusCompleted:  '#10B981',
@@ -56,22 +56,22 @@ const shared = {
 
 export const darkColors: BrandColors = {
   ...shared,
-  background:      '#2A2A2A',
-  surface:         '#353535',
-  surfaceElevated: '#494949',
-  border:          '#444444',
-  textPrimary:     '#F9FAFB',
-  textSecondary:   '#B0B0B0',
-  textMuted:       '#787878',
+  background:      '#0B0F19',
+  surface:         '#151D30',
+  surfaceElevated: '#222F4B',
+  border:          '#1E293B',
+  textPrimary:     '#F8FAFC',
+  textSecondary:   '#94A3B8',
+  textMuted:       '#64748B',
 };
 
 export const lightColors: BrandColors = {
   ...shared,
-  background:      '#F5F7FA',
+  background:      '#F8FAFC',
   surface:         '#FFFFFF',
-  surfaceElevated: '#F0F2F5',
-  border:          '#E2E6EA',
-  textPrimary:     '#111827',
-  textSecondary:   '#4B5563',
-  textMuted:       '#9CA3AF',
+  surfaceElevated: '#F1F5F9',
+  border:          '#E2E8F0',
+  textPrimary:     '#0F172A',
+  textSecondary:   '#475569',
+  textMuted:       '#94A3B8',
 };

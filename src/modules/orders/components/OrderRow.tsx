@@ -6,15 +6,12 @@ import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
 import CurrencyText from '@components/CurrencyText';
 import type { WCOrder } from '@app-types/woocommerce';
+import { getStatusLabel } from '@config/constants';
 
 interface Props { order: WCOrder; onPress: () => void; }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'En attente', processing: 'En cours', 'on-hold': 'En pause',
-  completed: 'Terminée', cancelled: 'Annulée', refunded: 'Remboursée', failed: 'Échouée',
-};
-
 function relativeDate(isoDate: string): string {
+
   const diffMs  = Date.now() - new Date(isoDate).getTime();
   const diffMin = Math.floor(diffMs / 60_000);
   const diffH   = Math.floor(diffMin / 60);
@@ -58,7 +55,7 @@ export default function OrderRow({ order, onPress }: Props) {
         <Text style={styles.orderNum}>#{order.number}</Text>
         <View style={[styles.statusBadge, { backgroundColor: statusColor + '22', borderColor: statusColor + '55' }]}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusLabel, { color: statusColor }]}>{STATUS_LABELS[order.status] ?? order.status}</Text>
+          <Text style={[styles.statusLabel, { color: statusColor }]}>{getStatusLabel(order.status)}</Text>
         </View>
       </View>
       <View style={styles.infoRow}>
@@ -87,7 +84,7 @@ export default function OrderRow({ order, onPress }: Props) {
             <Text style={styles.metaText}>{relativeDate(order.date_created)}</Text>
           </View>
         </View>
-        <CurrencyText amount={order.total} size="md" bold />
+        <CurrencyText amount={order.total} currency={order.currency} size="md" bold />
       </View>
     </TouchableOpacity>
   );

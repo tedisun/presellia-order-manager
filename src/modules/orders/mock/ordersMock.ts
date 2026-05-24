@@ -7,6 +7,82 @@ export function simulateDelay<T>(data: T, ms = 400): Promise<T> {
 
 // Tableau mutable pour que les mises à jour de statut persistent pendant la session mock
 export const MOCK_ORDERS: WCOrder[] = [
+  // ── Commandes de la Maquette ───────────────────────────────────────────────
+  {
+    id: 20660,
+    number: '20660',
+    status: 'completed',
+    date_created: new Date().toISOString(),
+    date_modified: new Date().toISOString(),
+    total: '37500.00',
+    currency: 'XOF',
+    payment_method: 'cinetpay',
+    payment_method_title: 'CinetPay',
+    payment_url: '',
+    customer_id: 101,
+    customer_note: '',
+    billing: {
+      first_name: 'Kofi', last_name: 'Mensah', company: '',
+      address_1: '', address_2: '', city: 'Accra',
+      state: '', postcode: '', country: 'GH',
+      email: 'kofi.mensah@gmail.com', phone: '+233201234567',
+    },
+    shipping: { first_name: 'Kofi', last_name: 'Mensah', address_1: '', city: 'Accra', country: 'GH' },
+    line_items: [
+      { id: 100, name: 'Licence Adobe Creative Cloud', product_id: 111, variation_id: 0, quantity: 1, sku: 'ADB-CC-1Y', price: 37500, total: '37500.00', subtotal: '37500.00', meta_data: [] }
+    ],
+    fee_lines: [], coupon_lines: [], meta_data: []
+  },
+  {
+    id: 20659,
+    number: '20659',
+    status: 'processing',
+    date_created: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    date_modified: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    total: '25000.00',
+    currency: 'XOF',
+    payment_method: 'fedapay',
+    payment_method_title: 'FedaPay',
+    payment_url: '',
+    customer_id: 102,
+    customer_note: '',
+    billing: {
+      first_name: 'Fatou', last_name: 'Diallo', company: '',
+      address_1: '', address_2: '', city: 'Dakar',
+      state: '', postcode: '', country: 'SN',
+      email: 'fatou.diallo@gmail.com', phone: '+221776543210',
+    },
+    shipping: { first_name: 'Fatou', last_name: 'Diallo', address_1: '', city: 'Dakar', country: 'SN' },
+    line_items: [
+      { id: 101, name: 'Abonnement Canva Pro', product_id: 200, variation_id: 0, quantity: 2, sku: 'CNV-PRO', price: 12500, total: '25000.00', subtotal: '25000.00', meta_data: [] }
+    ],
+    fee_lines: [], coupon_lines: [], meta_data: []
+  },
+  {
+    id: 20658,
+    number: '20658',
+    status: 'on-hold',
+    date_created: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    date_modified: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    total: '18000.00',
+    currency: 'XOF',
+    payment_method: 'ppay_offline',
+    payment_method_title: 'Paiement hors ligne',
+    payment_url: '',
+    customer_id: 103,
+    customer_note: '',
+    billing: {
+      first_name: 'Jean-Pierre', last_name: 'Mbeki', company: '',
+      address_1: '', address_2: '', city: 'Libreville',
+      state: '', postcode: '', country: 'GA',
+      email: 'jp.mbeki@gmail.com', phone: '+24107654321',
+    },
+    shipping: { first_name: 'Jean-Pierre', last_name: 'Mbeki', address_1: '', city: 'Libreville', country: 'GA' },
+    line_items: [
+      { id: 102, name: 'Domaine .com 1 an', product_id: 104, variation_id: 0, quantity: 1, sku: 'DOM-COM-1Y', price: 18000, total: '18000.00', subtotal: '18000.00', meta_data: [] }
+    ],
+    fee_lines: [], coupon_lines: [], meta_data: []
+  },
   // ── Aujourd'hui ─────────────────────────────────────────────────────────────
   {
     id: 20652,

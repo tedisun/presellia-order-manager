@@ -19,14 +19,24 @@ export type MainTabParamList = {
   Dashboard: undefined;
   OrdersTab: undefined;
   CustomersTab: undefined;
-  Notifications: undefined;
+  ProductsTab: undefined;
+  MenuTab: undefined;
+};
+
+export type ProductsStackParamList = {
+  ProductsList: undefined;
+};
+
+export type MenuStackParamList = {
+  MenuHome: undefined;
+  Notifications: undefined; // inbox relogged here
 };
 
 // ─── Stack Commandes ──────────────────────────────────────────────────────────
 export type OrdersStackParamList = {
   OrdersList: undefined;
   OrderDetail: { orderId: number };
-  CreateOrder: { customerId?: number } | undefined;
+  CreateOrder: { orderId?: number; customerId?: number } | undefined;
 };
 
 // ─── Stack Clients ────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
@@ -13,6 +13,7 @@ import { useAuth } from '@modules/auth/hooks/useAuth';
 import {
   fetchCustomers, fetchGuestCustomers, fetchPartnerProducts,
   createOrder, createCustomer, syncCustomerPhone, fetchTopProducts, fetchProductVariations,
+  fetchOrder, updateOrder, fetchProducts,
 } from '@services/woocommerce';
 import CurrencyText from '@components/CurrencyText';
 import SearchBar from '@components/SearchBar';
@@ -501,7 +502,137 @@ export default function CreateOrderScreen() {
   const [customer, setCustomer] = useState<WCCustomer | null>(null);
   const [lineItems, setLineItems] = useState<LineItemDraft[]>([]);
   const [payment, setPayment] = useState<PaymentChoice>({ mode: 'offline', detail: null });
+  const [currency, setCurrency] = useState<string>('XOF');
   const [submitting, setSubmitting] = useState(false);
+  const [loadingOrder, setLoadingOrder] = useState(false);
+
+  // Charger la commande existante si orderId est présent en paramètre
+  useEffect(() => {
+    const loadOrderToEdit = async () => {
+      if (route.params?.orderId) {
+        setLoadingOrder(true);
+        try {
+          const order = await fetchOrder(route.params.orderId);
+          
+          // Préremplir le client
+          const prefilledCustomer: WCCustomer = {
+            id: order.customer_id,
+            date_created: order.date_created,
+            email: order.billing.email || '',
+            first_name: order.billing.first_name,
+            last_name: order.billing.last_name,
+            username: '',
+            billing: order.billing,
+            shipping: order.shipping,
+            meta_data: order.meta_data,
+            orders_count: 1,
+            total_spent: order.total,
+            role: 'customer',
+            avatar_url: '',
+          };
+          setCustomer(prefilledCustomer);
+          
+          // Préremplir la monnaie et le mode de paiement
+          setCurrency(order.currency || 'XOF');
+          
+          const isOffline = order.payment_method === 'offline' || order.payment_method === 'ppay_offline';
+          const offlineDetailMeta = order.meta_data.find(m => m.key === '_presellia_payment_detail');
+          setPayment({
+            mode: isOffline ? 'offline' : 'link',
+            detail: offlineDetailMeta ? offlineDetailMeta.value as OfflinePaymentDetail : null,
+          });
+          
+          // Préremplir les line items avec leurs infos catalogue (ou fallback mock local)
+          const draftedItems: LineItemDraft[] = [];
+          for (const item of order.line_items) {
+            try {
+              // Récupère les infos produit du catalogue
+              const catalogProducts = await fetchProducts(item.name).catch(() => []);
+              const foundProduct = catalogProducts.find((p: WCProduct) => p.id === item.product_id) || {
+                id: item.product_id,
+                name: item.name,
+                slug: '',
+                type: item.variation_id ? 'variable' : 'simple',
+                status: 'publish',
+                price: item.price.toString(),
+                regular_price: item.price.toString(),
+                sale_price: '',
+                sku: item.sku,
+                stock_status: 'instock',
+                stock_quantity: null,
+                categories: [],
+              } as WCProduct;
+
+              let foundVariation: WCProductVariation | undefined = undefined;
+              if (item.variation_id > 0) {
+                const variations = await fetchProductVariations(item.product_id).catch(() => []);
+                foundVariation = variations.find((v: WCProductVariation) => v.id === item.variation_id) || {
+                  id: item.variation_id,
+                  status: 'publish',
+                  price: item.price.toString(),
+                  regular_price: item.price.toString(),
+                  sale_price: '',
+                  sku: item.sku,
+                  stock_status: 'instock',
+                  stock_quantity: null,
+                  attributes: [],
+                } as WCProductVariation;
+              }
+
+              const subtotalPrice = parseFloat(item.subtotal || item.total);
+              const totalPrice = parseFloat(item.total);
+              let discountType: 'none' | 'percent' | 'fixed' = 'none';
+              let discountValue = 0;
+
+              if (subtotalPrice > totalPrice) {
+                discountType = 'fixed';
+                discountValue = subtotalPrice - totalPrice;
+              }
+
+              draftedItems.push({
+                product: foundProduct,
+                variation: foundVariation,
+                unit_price: item.price,
+                quantity: item.quantity,
+                discountType,
+                discountValue,
+              });
+            } catch (errItem) {
+              console.warn('[EditMode] Erreur lors de l\'intégration de l\'article:', errItem);
+              draftedItems.push({
+                product: {
+                  id: item.product_id,
+                  name: item.name,
+                  slug: '',
+                  type: 'simple',
+                  status: 'publish',
+                  price: item.price.toString(),
+                  regular_price: item.price.toString(),
+                  sale_price: '',
+                  sku: item.sku,
+                  stock_status: 'instock',
+                  stock_quantity: null,
+                  categories: [],
+                } as WCProduct,
+                unit_price: item.price,
+                quantity: item.quantity,
+                discountType: 'none',
+                discountValue: 0,
+              });
+            }
+          }
+          setLineItems(draftedItems);
+        } catch (err) {
+          Alert.alert('Erreur', 'Impossible de charger la commande pour modification.');
+          console.warn(err);
+        } finally {
+          setLoadingOrder(false);
+        }
+      }
+    };
+    
+    loadOrderToEdit();
+  }, [route.params?.orderId]);
 
   const goBack = () => {
     if (step > 1) {
@@ -512,11 +643,11 @@ export default function CreateOrderScreen() {
     const hasDraft = customer !== null || lineItems.length > 0;
     if (hasDraft) {
       Alert.alert(
-        'Annuler la commande ?',
-        'Toutes les données saisies seront perdues.',
+         route.params?.orderId ? 'Annuler l\'édition ?' : 'Annuler la commande ?',
+         route.params?.orderId ? 'Toutes les modifications non enregistrées seront perdues.' : 'Toutes les données saisies seront perdues.',
         [
           { text: 'Continuer la saisie', style: 'cancel' },
-          { text: 'Annuler la commande', style: 'destructive', onPress: () => navigation.goBack() },
+          { text: 'Annuler', style: 'destructive', onPress: () => navigation.goBack() },
         ]
       );
     } else {
@@ -533,6 +664,7 @@ export default function CreateOrderScreen() {
       const payload: CreateOrderPayload = {
         status: payment.mode === 'link' ? 'pending' : 'completed',
         customer_id: customer.id,
+        currency: currency,
         billing: {
           first_name: customer.first_name,
           last_name:  customer.last_name,
@@ -558,20 +690,39 @@ export default function CreateOrderScreen() {
         ],
       };
 
-      const created = await createOrder(payload);
+      const isEditing = !!route.params?.orderId;
+      let targetOrderId = route.params?.orderId;
+
+      if (isEditing && targetOrderId) {
+        await updateOrder(targetOrderId, payload);
+      } else {
+        const created = await createOrder(payload);
+        targetOrderId = created.id;
+      }
 
       // Fix téléphone bug WC
       if (customer.id > 0 && customer.billing.phone) {
-        await syncCustomerPhone(customer.id, customer.billing.phone).catch(() => {});
+         await syncCustomerPhone(customer.id, customer.billing.phone).catch(() => {});
       }
 
-      navigation.replace('OrderDetail', { orderId: created.id });
+      navigation.replace('OrderDetail', { orderId: targetOrderId });
     } catch (err) {
-      Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible de créer la commande.');
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible d\'enregistrer la commande.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (loadingOrder) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ marginTop: 12, fontSize: 15, color: colors.textSecondary }}>Chargement de la commande...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -598,6 +749,7 @@ export default function CreateOrderScreen() {
             onNext={() => setStep(3)}
             styles={styles}
             colors={colors}
+            currency={currency}
           />
         )}
         {step === 3 && (
@@ -607,6 +759,8 @@ export default function CreateOrderScreen() {
             onNext={() => setStep(4)}
             styles={styles}
             colors={colors}
+            currency={currency}
+            onCurrencyChange={setCurrency}
           />
         )}
         {step === 4 && (
@@ -618,6 +772,8 @@ export default function CreateOrderScreen() {
             submitting={submitting}
             onSubmit={handleSubmit}
             styles={styles}
+            currency={currency}
+            isEditing={!!route.params?.orderId}
           />
         )}
       </KeyboardAvoidingView>
@@ -1115,7 +1271,7 @@ function StepCustomer({
 
 // ─── Step 2: Products ─────────────────────────────────────────────────────────
 function StepProducts({
-  customer, items, onChange, onNext, styles, colors,
+  customer, items, onChange, onNext, styles, colors, currency,
 }: {
   customer: WCCustomer | null;
   items: LineItemDraft[];
@@ -1123,6 +1279,7 @@ function StepProducts({
   onNext: () => void;
   styles: ReturnType<typeof makeStyles>;
   colors: BrandColors;
+  currency: string;
 }) {
   const [allProducts, setAllProducts] = useState<WCProduct[]>([]);
   const [topProducts, setTopProducts] = useState<WCProduct[]>([]);
@@ -1276,12 +1433,19 @@ function StepProducts({
                     <Text style={styles.productName}>{p.name}</Text>
                     {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
                   </View>
-                  <CurrencyText
-                    amount={isPartner && p.partner_price ? p.partner_price : p.price}
-                    size="sm"
-                    bold={isPartner && !!p.partner_price}
-                    color={isPartner && p.partner_price ? colors.success : undefined}
-                  />
+                  {p.type === 'variable' ? (
+                    <View style={[styles.guestBadge, { backgroundColor: colors.primary + '18' }]}>
+                      <Text style={[styles.guestBadgeText, { color: colors.primary, fontWeight: '600' }]}>Options ▾</Text>
+                    </View>
+                  ) : (
+                    <CurrencyText
+                      amount={isPartner && p.partner_price ? p.partner_price : p.price}
+                      currency={currency}
+                      size="sm"
+                      bold={isPartner && !!p.partner_price}
+                      color={isPartner && p.partner_price ? colors.success : undefined}
+                    />
+                  )}
                   <Text style={styles.addBtn}>+</Text>
                 </TouchableOpacity>
               ))
@@ -1301,12 +1465,19 @@ function StepProducts({
               <Text style={styles.productName}>{p.name}</Text>
               {p.sku ? <Text style={styles.productSku}>{p.sku}</Text> : null}
             </View>
-            <CurrencyText
-              amount={isPartner && p.partner_price ? p.partner_price : p.price}
-              size="sm"
-              bold={isPartner && !!p.partner_price}
-              color={isPartner && p.partner_price ? colors.success : undefined}
-            />
+            {p.type === 'variable' ? (
+              <View style={[styles.guestBadge, { backgroundColor: colors.primary + '18' }]}>
+                <Text style={[styles.guestBadgeText, { color: colors.primary, fontWeight: '600' }]}>Options ▾</Text>
+              </View>
+            ) : (
+              <CurrencyText
+                amount={isPartner && p.partner_price ? p.partner_price : p.price}
+                currency={currency}
+                size="sm"
+                bold={isPartner && !!p.partner_price}
+                color={isPartner && p.partner_price ? colors.success : undefined}
+              />
+            )}
             <Text style={styles.addBtn}>+</Text>
           </TouchableOpacity>
         ))}
@@ -1344,6 +1515,7 @@ function StepProducts({
                       </View>
                       <CurrencyText
                         amount={price}
+                        currency={currency}
                         size="sm"
                         bold={isPartner && !!v.partner_price}
                         color={isPartner && v.partner_price ? colors.success : undefined}
@@ -1388,6 +1560,18 @@ function StepProducts({
                       <Text style={styles.qtyBtnText}>+</Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Prix unitaire éditable ( bargaining / multidevises ) */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.background, paddingHorizontal: 6, paddingVertical: 2, borderRadius: BRANDING.radius.sm, borderWidth: 1, borderColor: colors.border }}>
+                    <TextInput
+                      style={{ color: colors.textPrimary, fontSize: BRANDING.fonts.sizeSM, width: 52, padding: 0, textAlign: 'center' }}
+                      value={String(li.unit_price)}
+                      onChangeText={(v) => updateItem(idx, { unit_price: parseFloat(v) || 0 })}
+                      keyboardType="numeric"
+                    />
+                    <Text style={{ fontSize: 10, color: colors.textMuted }}>{currency}</Text>
+                  </View>
+
                   <View style={styles.discountRow}>
                     <TouchableOpacity
                       style={[styles.discountType, li.discountType === 'percent' && styles.discountTypeActive]}
@@ -1412,14 +1596,14 @@ function StepProducts({
                       />
                     )}
                   </View>
-                  <CurrencyText amount={getLineTotal(li)} size="sm" bold />
+                  <CurrencyText amount={getLineTotal(li)} currency={currency} size="sm" bold />
                 </View>
               </View>
             ))}
           </ScrollView>
           <View style={styles.cartTotal}>
             <Text style={styles.cartTotalLabel}>Panier · {items.length} article{items.length > 1 ? 's' : ''}</Text>
-            <CurrencyText amount={total} size="lg" bold />
+            <CurrencyText amount={total} currency={currency} size="lg" bold />
           </View>
         </View>
       )}
@@ -1429,15 +1613,43 @@ function StepProducts({
 
 // ─── Step 3: Payment ──────────────────────────────────────────────────────────
 function StepPayment({
-  payment, onChange, onNext, styles, colors,
+  payment, onChange, onNext, styles, colors, currency, onCurrencyChange,
 }: {
   payment: PaymentChoice; onChange: (p: PaymentChoice) => void; onNext: () => void;
   styles: ReturnType<typeof makeStyles>;
   colors: BrandColors;
+  currency: string;
+  onCurrencyChange: (c: string) => void;
 }) {
+  const currencies = [
+    { value: 'XOF', label: 'XOF (Franc CFA)' },
+    { value: 'USD', label: 'USD (Dollars $)' },
+    { value: 'EUR', label: 'EUR (Euros €)' },
+  ];
+
   return (
     <ScrollView contentContainerStyle={styles.stepContent}>
-      <Text style={styles.stepTitle}>Étape 3 — Paiement</Text>
+      <Text style={styles.stepTitle}>Étape 3 — Devises & Paiement</Text>
+
+      {/* Section Choix de Devise */}
+      <View style={styles.methodRow}>
+        <Text style={styles.methodLabel}>Devise de la commande</Text>
+        <View style={styles.chipRow}>
+          {currencies.map((c) => (
+            <TouchableOpacity
+              key={c.value}
+              style={[styles.chip, currency === c.value && styles.chipActive]}
+              onPress={() => onCurrencyChange(c.value)}
+            >
+              <Text style={[styles.chipLabel, currency === c.value && styles.chipLabelActive]}>
+                {c.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <Text style={[styles.methodLabel, { marginTop: BRANDING.spacing.md }]}>Mode de paiement</Text>
 
       <TouchableOpacity
         style={[styles.paymentCard, payment.mode === 'offline' && styles.paymentCardActive]}
@@ -1495,7 +1707,7 @@ function StepPayment({
 
 // ─── Step 4: Recap ────────────────────────────────────────────────────────────
 function StepRecap({
-  customer, items, payment, total, submitting, onSubmit, styles,
+  customer, items, payment, total, submitting, onSubmit, styles, currency, isEditing,
 }: {
   customer: WCCustomer;
   items: LineItemDraft[];
@@ -1504,6 +1716,8 @@ function StepRecap({
   submitting: boolean;
   onSubmit: () => void;
   styles: ReturnType<typeof makeStyles>;
+  currency: string;
+  isEditing?: boolean;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.stepContent}>
@@ -1525,7 +1739,7 @@ function StepRecap({
                 : li.product.name
               } × {li.quantity}
             </Text>
-            <CurrencyText amount={getLineTotal(li)} size="sm" />
+            <CurrencyText amount={getLineTotal(li)} currency={currency} size="sm" />
           </View>
         ))}
       </View>
@@ -1540,7 +1754,7 @@ function StepRecap({
 
       <View style={styles.recapTotal}>
         <Text style={styles.recapTotalLabel}>Total commande</Text>
-        <CurrencyText amount={total} size="xl" bold />
+        <CurrencyText amount={total} currency={currency} size="xl" bold />
       </View>
 
       <TouchableOpacity
@@ -1552,7 +1766,10 @@ function StepRecap({
           <ActivityIndicator color="#FFF" />
         ) : (
           <Text style={styles.submitBtnText}>
-            {payment.mode === 'link' ? '🔗 Créer et envoyer lien' : '✓ Créer la commande'}
+            {isEditing 
+              ? '✓ Enregistrer les modifications'
+              : (payment.mode === 'link' ? '🔗 Créer et envoyer lien' : '✓ Créer la commande')
+            }
           </Text>
         )}
       </TouchableOpacity>

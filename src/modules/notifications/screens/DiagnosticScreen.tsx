@@ -96,7 +96,7 @@ export default function DiagnosticScreen() {
       .slice(0, 100)
       .map((e) => `[${e.ts.slice(11, 19)}] ${e.level.toUpperCase()} [${e.tag}] ${e.msg}`)
       .join('\n');
-    Share.share({ message: `--- Diagnostic Order Manager ---\n${text}` });
+    Share.share({ message: `--- Diagnostic Presellia Orders ---\n${text}` });
   }, [logs]);
 
   const formatToken = (t: string | null) => {

@@ -4,32 +4,32 @@
 
 export const BRANDING = {
   // Identité
-  appName: 'Order Manager',
+  appName: 'Presellia Orders',
   businessName: 'Presellia',
-  tagline: 'Gestion des commandes',
+  tagline: 'Gestion premium des commandes',
 
   // Monnaie
   currency: 'F CFA',
   currencyCode: 'XOF',
   locale: 'fr-FR',
 
-  // Couleurs — dark mode premium (neutral black, sans teinte bleue)
+  // Couleurs — dark mode premium (obsidienne & violet néon)
   colors: {
-    // Fonds — medium dark (shades de gris chauds, contraste marqué entre niveaux)
-    background: '#2A2A2A',      // fond principal
-    surface: '#353535',         // cartes, surfaces
-    surfaceElevated: '#494949', // modals, bottom sheets, inputs
-    border: '#444444',          // séparateurs
+    // Fonds
+    background: '#0B0F19',      // obsidienne profonde
+    surface: '#151D30',         // cartes
+    surfaceElevated: '#222F4B', // inputs, modals
+    border: '#1E293B',          // séparateurs
 
     // Marque
-    primary: '#7C3AED',         // violet vif Presellia
-    primaryDark: '#6D28D9',     // état pressé
-    accent: '#F97316',          // orange vif
+    primary: '#8B5CF6',         // violet néon
+    primaryDark: '#7C3AED',     // état pressé
+    accent: '#F43F5E',          // rose néon vif
 
     // Texte
-    textPrimary: '#F9FAFB',     // blanc légèrement doux
-    textSecondary: '#B0B0B0',   // gris moyen (éclairci pour fond #2A)
-    textMuted: '#787878',       // gris doux (éclairci pour fond #2A)
+    textPrimary: '#F8FAFC',     // blanc doux
+    textSecondary: '#94A3B8',   // gris ardoise moyen
+    textMuted: '#64748B',       // gris ardoise doux
 
     // Statuts commandes (flat keys pour rétrocompat)
     statusPending:    '#F59E0B',

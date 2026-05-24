@@ -4,7 +4,7 @@
 
 import { USE_MOCK, WC_API_PATH, PPB_API_PATH, ORDERS_PER_PAGE, CUSTOMERS_PER_PAGE, PRODUCTS_PER_PAGE } from '@config/constants';
 import { Storage } from './storage';
-import type { WCOrder, WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, DashboardStats, OrderStatus } from '@app-types/woocommerce';
+import type { WCOrder, WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, DashboardStats, OrderStatus, WCOrderStatus } from '@app-types/woocommerce';
 import type { DashboardPeriod } from '@config/constants';
 
 // ─── Erreurs ──────────────────────────────────────────────────────────────────
@@ -44,6 +44,24 @@ async function wcFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export function enrichProduct(p: any): WCProduct {
+  if (!p) return p;
+  const metaPartnerPrice = p.meta_data?.find((m: any) => m.key === '_ppb_partner_price')?.value;
+  return {
+    ...p,
+    partner_price: metaPartnerPrice ? String(metaPartnerPrice) : undefined,
+  };
+}
+
+export function enrichProductVariation(v: any): WCProductVariation {
+  if (!v) return v;
+  const metaPartnerPrice = v.meta_data?.find((m: any) => m.key === '_ppb_partner_price')?.value;
+  return {
+    ...v,
+    partner_price: metaPartnerPrice ? String(metaPartnerPrice) : undefined,
+  };
 }
 
 // ─── Commandes ────────────────────────────────────────────────────────────────
@@ -157,6 +175,53 @@ export async function createOrder(payload: CreateOrderPayload): Promise<WCOrder>
   });
 }
 
+export async function updateOrder(id: number, payload: Partial<CreateOrderPayload>): Promise<WCOrder> {
+  if (USE_MOCK) {
+    const { MOCK_ORDERS, simulateDelay } = await import('@modules/orders/mock/ordersMock');
+    const idx = MOCK_ORDERS.findIndex((o) => o.id === id);
+    if (idx === -1) throw new WCApiError(404, { message: 'Commande introuvable' });
+    
+    const existing = MOCK_ORDERS[idx];
+    const total = payload.line_items 
+      ? payload.line_items.reduce((sum, li) => sum + parseFloat(li.total || '0'), 0).toFixed(2)
+      : existing.total;
+
+    MOCK_ORDERS[idx] = {
+      ...existing,
+      status: payload.status ?? existing.status,
+      date_modified: new Date().toISOString(),
+      total,
+      billing: { ...existing.billing, ...payload.billing },
+      payment_method: payload.payment_method ?? existing.payment_method,
+      payment_method_title: payload.payment_method_title ?? existing.payment_method_title,
+      currency: payload.currency ?? existing.currency,
+      customer_id: payload.customer_id !== undefined ? payload.customer_id : existing.customer_id,
+      line_items: payload.line_items ? payload.line_items.map((li: any, i) => ({
+        id: 1000 + i,
+        name: 'Produit #' + li.product_id,
+        product_id: li.product_id,
+        variation_id: li.variation_id || 0,
+        quantity: li.quantity,
+        tax_class: '',
+        subtotal: li.subtotal || li.total,
+        subtotal_tax: '0.00',
+        total: li.total,
+        total_tax: '0.00',
+        taxes: [],
+        meta_data: [],
+        sku: '',
+        price: parseFloat(li.total) / li.quantity,
+      })) : existing.line_items,
+      meta_data: payload.meta_data ? [...existing.meta_data.filter(m => !payload.meta_data?.some(pm => pm.key === m.key)), ...payload.meta_data] : existing.meta_data,
+    };
+    return simulateDelay(MOCK_ORDERS[idx], 500);
+  }
+  return wcFetch<WCOrder>(`${WC_API_PATH}/orders/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchProductVariations(productId: number): Promise<WCProductVariation[]> {
   if (USE_MOCK) {
     const { simulateDelay } = await import('@modules/orders/mock/ordersMock');
@@ -181,9 +246,10 @@ export async function fetchProductVariations(productId: number): Promise<WCProdu
       },
     ], 300);
   }
-  return wcFetch<WCProductVariation[]>(
+  const res = await wcFetch<WCProductVariation[]>(
     `${WC_API_PATH}/products/${productId}/variations?per_page=50&status=publish&orderby=menu_order&order=asc`
   );
+  return res.map(enrichProductVariation);
 }
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
@@ -202,11 +268,39 @@ export async function fetchCustomers(search?: string): Promise<WCCustomer[]> {
     }
     return delay(customers);
   }
-  const query = new URLSearchParams({
-    per_page: String(CUSTOMERS_PER_PAGE),
-    ...(search ? { search } : {}),
-  });
-  return wcFetch<WCCustomer[]>(`${WC_API_PATH}/customers?${query}`);
+
+  if (!search || search.trim().length === 0) {
+    const query = new URLSearchParams({ per_page: String(CUSTOMERS_PER_PAGE) });
+    return wcFetch<WCCustomer[]>(`${WC_API_PATH}/customers?${query}`);
+  }
+
+  // ── Recherche multi-termes ──────────────────────────────────────────────────
+  // WooCommerce cherche sur display_name, email, login — pas sur first_name/last_name
+  // séparément. Pour "Abdoulaye Fofana", on cherche chaque mot en parallèle,
+  // puis on fusionne et déduplique par ID.
+  const terms = search.trim().split(/\s+/).filter(t => t.length >= 2);
+  const searchTerms = terms.length > 1 ? terms : [search.trim()];
+
+  const results = await Promise.allSettled(
+    searchTerms.map(term => {
+      const q = new URLSearchParams({ per_page: '50', search: term });
+      return wcFetch<WCCustomer[]>(`${WC_API_PATH}/customers?${q}`);
+    })
+  );
+
+  const seen = new Set<number>();
+  const merged: WCCustomer[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      for (const customer of result.value) {
+        if (!seen.has(customer.id)) {
+          seen.add(customer.id);
+          merged.push(customer);
+        }
+      }
+    }
+  }
+  return merged;
 }
 
 export async function fetchCustomer(id: number): Promise<WCCustomer> {
@@ -217,6 +311,26 @@ export async function fetchCustomer(id: number): Promise<WCCustomer> {
     return delay(c, 200);
   }
   return wcFetch<WCCustomer>(`${WC_API_PATH}/customers/${id}`);
+}
+
+// Retourne le nombre réel de commandes d'un client enregistré.
+// L'API /customers retourne souvent orders_count = 0 à cause d'une table de cache
+// WC non synchronisée. On utilise le header X-WP-Total de /orders?customer=ID.
+export async function fetchCustomerOrderCount(customerId: number): Promise<number> {
+  if (USE_MOCK || customerId === 0) return 0;
+  try {
+    const creds = await Storage.getCredentials();
+    if (!creds) return 0;
+    const url = `${creds.store_url}${WC_API_PATH}/orders?customer=${customerId}&per_page=1&_fields=id`;
+    const res = await fetch(url, {
+      headers: { 'Authorization': 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`) },
+    });
+    if (!res.ok) return 0;
+    const total = res.headers.get('X-WP-Total');
+    return total ? parseInt(total, 10) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export async function syncCustomerPhone(id: number, phone: string): Promise<void> {
@@ -248,7 +362,8 @@ export async function fetchProducts(search?: string): Promise<WCProduct[]> {
     order: 'asc',
     ...(search ? { search } : {}),
   });
-  return wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${query}`);
+  const res = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${query}`);
+  return res.map(enrichProduct);
 }
 
 // Récupère l'intégralité du catalogue publié en paginant toutes les pages (100/page).
@@ -270,7 +385,7 @@ export async function fetchAllProducts(): Promise<WCProduct[]> {
       order:    'asc',
     });
     const batch = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${q}`);
-    all.push(...batch);
+    all.push(...batch.map(enrichProduct));
     if (batch.length < PRODUCTS_PER_PAGE) break;
     page++;
   }
@@ -286,10 +401,10 @@ export async function fetchTopProducts(limit = 6): Promise<WCProduct[]> {
     return delay(MOCK_PRODUCTS.slice(0, limit));
   }
   try {
-    // Récupère les line_items des 50 dernières commandes finalisées
+    // Récupère les line_items des 50 dernières commandes finalisées ou activées
     type SlimOrder = { line_items: Array<{ product_id: number; quantity: number }> };
     const recentOrders = await wcFetch<SlimOrder[]>(
-      `${WC_API_PATH}/orders?per_page=50&status=completed,processing&_fields=line_items`
+      `${WC_API_PATH}/orders?per_page=50&status=completed,processing,souscription-actv&_fields=line_items`
     );
 
     // Agrège la fréquence par product_id
@@ -301,18 +416,29 @@ export async function fetchTopProducts(limit = 6): Promise<WCProduct[]> {
         }
       }
     }
-    if (!freq.size) return [];
+    if (!freq.size) {
+      // Fallback sur le catalogue réel si aucune vente enregistrée
+      const fallbackRes = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?per_page=${limit}&status=publish`);
+      return fallbackRes.map(enrichProduct);
+    }
 
     const topIds = Array.from(freq.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
       .map(([id]) => id);
 
-    return wcFetch<WCProduct[]>(
+    const topRes = await wcFetch<WCProduct[]>(
       `${WC_API_PATH}/products?include=${topIds.join(',')}&per_page=${limit}&status=publish`
     );
+    return topRes.map(enrichProduct);
   } catch {
-    return [];
+    // En cas d'erreur réseau, fallback sur le catalogue général en direct pour éviter toute donnée test
+    try {
+      const errFallbackRes = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?per_page=${limit}&status=publish`);
+      return errFallbackRes.map(enrichProduct);
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -344,7 +470,8 @@ export async function fetchPartnerProducts(): Promise<WCProduct[]> {
     const { simulateDelay: delay } = await import('@modules/orders/mock/ordersMock');
     return delay(MOCK_PRODUCTS.filter((p) => p.partner_price));
   }
-  return wcFetch<WCProduct[]>(`${PPB_API_PATH}/products`);
+  const res = await wcFetch<WCProduct[]>(`${PPB_API_PATH}/products`);
+  return res.map(enrichProduct);
 }
 
 export async function fetchLowStockProducts(threshold = 5): Promise<WCProduct[]> {
@@ -355,13 +482,19 @@ export async function fetchLowStockProducts(threshold = 5): Promise<WCProduct[]>
   }
   const query = new URLSearchParams({ per_page: '50', status: 'publish', stock_status: 'instock' });
   const products = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${query}`);
-  return products.filter((p) => p.stock_quantity !== null && p.stock_quantity <= threshold);
+  return products.map(enrichProduct).filter((p) => p.stock_quantity !== null && p.stock_quantity <= threshold);
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 // Calcule les dates de début/fin pour chaque période
-function getPeriodDates(period: DashboardPeriod): { dateMin: string; dateMax: string } {
+function getPeriodDates(
+  period: DashboardPeriod,
+  customRange?: { start: string; end: string }
+): { dateMin: string; dateMax: string } {
+  if (period === 'custom' && customRange) {
+    return { dateMin: customRange.start, dateMax: customRange.end };
+  }
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
@@ -372,6 +505,7 @@ function getPeriodDates(period: DashboardPeriod): { dateMin: string; dateMax: st
     case 'month':   start.setDate(1); break;
     case 'quarter': start.setMonth(Math.floor(start.getMonth() / 3) * 3, 1); break;
     case 'year':    start.setMonth(0, 1); break;
+    default:        break;
   }
 
   const fmt = (d: Date) => d.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -418,12 +552,15 @@ async function fetchOrdersForPeriod(
 
 // Koko Analytics — visites et pages vues du site
 // Endpoint public : /wp-json/koko-analytics/v1/stats
-export async function fetchSiteVisits(period: DashboardPeriod): Promise<{ visitors: number; pageviews: number } | null> {
+export async function fetchSiteVisits(
+  period: DashboardPeriod,
+  customRange?: { start: string; end: string }
+): Promise<{ visitors: number; pageviews: number } | null> {
   if (USE_MOCK) return { visitors: 1250, pageviews: 3400 };
   try {
     const creds = await Storage.getCredentials();
     if (!creds) return null;
-    const { dateMin, dateMax } = getPeriodDates(period);
+    const { dateMin, dateMax } = getPeriodDates(period, customRange);
     const url = `${creds.store_url}/wp-json/koko-analytics/v1/stats?start_date=${dateMin}&end_date=${dateMax}`;
     const res = await fetch(url, {
       headers: { 'Authorization': 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`) },
@@ -435,14 +572,17 @@ export async function fetchSiteVisits(period: DashboardPeriod): Promise<{ visito
   }
 }
 
-export async function fetchDashboardStats(period: DashboardPeriod): Promise<DashboardStats> {
+export async function fetchDashboardStats(
+  period: DashboardPeriod,
+  customRange?: { start: string; end: string }
+): Promise<DashboardStats> {
   if (USE_MOCK) {
     const { getMockDashboard } = await import('../modules/dashboard/mock/dashboardMock');
     const { simulateDelay } = await import('@modules/orders/mock/ordersMock');
     return simulateDelay(getMockDashboard(period));
   }
 
-  const { dateMin, dateMax } = getPeriodDates(period);
+  const { dateMin, dateMax } = getPeriodDates(period, customRange);
 
   // Agrégation directe des commandes — même approche que le MCP wc_get_store_stats
   const [periodOrders, recentOrders] = await Promise.all([
@@ -451,13 +591,13 @@ export async function fetchDashboardStats(period: DashboardPeriod): Promise<Dash
   ]);
 
   // Statuts qui contribuent au CA (excluent cancelled/refunded/failed/pending)
-  const revenueStatuses = new Set(['processing', 'on-hold', 'completed']);
+  const revenueStatuses = new Set(['processing', 'on-hold', 'completed', 'souscription-actv']);
   const revenue = periodOrders
     .filter(o => revenueStatuses.has(o.status))
     .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
 
   const revenueObj: import('@app-types/woocommerce').DashboardRevenue = {
-    today: 0, week: 0, month: 0, quarter: 0, year: 0,
+    today: 0, week: 0, month: 0, quarter: 0, year: 0, custom: 0,
   };
   revenueObj[period] = revenue;
 
@@ -468,7 +608,7 @@ export async function fetchDashboardStats(period: DashboardPeriod): Promise<Dash
   periodOrders.forEach((o) => {
     if (o.status === 'pending')    counts.pending++;
     if (o.status === 'processing') counts.processing++;
-    if (o.status === 'completed')  counts.completed++;
+    if (o.status === 'completed' || o.status === 'souscription-actv')  counts.completed++;
     if (o.status === 'cancelled')  counts.cancelled++;
     if (o.status === 'on-hold')    counts.on_hold++;
   });
@@ -631,4 +771,77 @@ export async function fetchGuestCustomers(search?: string): Promise<WCCustomer[]
     });
   }
   return result;
+}
+
+export async function fetchOrderStatuses(): Promise<WCOrderStatus[]> {
+  if (USE_MOCK) {
+    const { simulateDelay } = await import('@modules/orders/mock/ordersMock');
+    return simulateDelay<WCOrderStatus[]>([
+      { slug: 'pending',    name: 'Attente paiement' },
+      { slug: 'processing', name: 'En cours' },
+      { slug: 'on-hold',   name: 'En attente' },
+      { slug: 'completed', name: 'Terminée' },
+      { slug: 'cancelled', name: 'Annulée' },
+      { slug: 'refunded',  name: 'Remboursée' },
+      { slug: 'failed',    name: 'Échouée' },
+      { slug: 'souscription-actv', name: 'Souscription Activée' },
+      { slug: 'checkout-draft', name: 'Brouillon' }
+    ], 200);
+  }
+  return wcFetch<WCOrderStatus[]>(`${WC_API_PATH}/orders/statuses`);
+}
+
+export async function updateProduct(
+  id: number,
+  data: {
+    regular_price?: string;
+    sale_price?: string;
+    stock_quantity?: number;
+    stock_status?: string;
+    meta_data?: Array<{ key: string; value: string }>;
+  },
+  variationId?: number
+): Promise<WCProduct> {
+  if (USE_MOCK) {
+    const { MOCK_PRODUCTS } = await import('@modules/orders/mock/productsMock');
+    const { simulateDelay } = await import('@modules/orders/mock/ordersMock');
+    const idx = MOCK_PRODUCTS.findIndex((p) => p.id === id);
+    if (idx === -1) throw new WCApiError(404, null);
+    
+    const current = MOCK_PRODUCTS[idx];
+    const newPrice = data.regular_price !== undefined ? data.regular_price : current.price;
+    const newSalePrice = data.sale_price !== undefined ? data.sale_price : current.sale_price;
+    const newQty = data.stock_quantity !== undefined ? data.stock_quantity : current.stock_quantity;
+    
+    let newStatus = data.stock_status || current.stock_status;
+    if (newQty === 0) {
+      newStatus = 'outofstock';
+    } else if (newQty !== null && newQty > 0) {
+      newStatus = 'instock';
+    }
+    
+    const newPartnerPrice = data.meta_data?.find(m => m.key === '_ppb_partner_price')?.value || current.partner_price;
+    
+    MOCK_PRODUCTS[idx] = { 
+      ...current, 
+      regular_price: newPrice,
+      sale_price: newSalePrice,
+      price: newSalePrice ? newSalePrice : newPrice,
+      stock_quantity: newQty,
+      stock_status: newStatus as any,
+      partner_price: newPartnerPrice,
+    };
+    return simulateDelay(MOCK_PRODUCTS[idx], 300);
+  }
+  
+  // Si variationId fourni → éditer la variation individuelle
+  const endpoint = variationId
+    ? `${WC_API_PATH}/products/${id}/variations/${variationId}`
+    : `${WC_API_PATH}/products/${id}`;
+
+  const res = await wcFetch<WCProduct>(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  return enrichProduct(res);
 }

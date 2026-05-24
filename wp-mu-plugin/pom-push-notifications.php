@@ -3,15 +3,18 @@
  * Plugin Name: POM Push Notifications
  * Description: Enregistre les tokens Expo Push et envoie des notifications
  *              aux agents Presellia lors d'événements WooCommerce.
- * Version:     1.1.0
+ *              Expose également un endpoint d'authentification native pour
+ *              l'application mobile (création automatique d'Application Password).
+ * Version:     1.2.0
  * Author:      Tedisun SARL
  *
  * Déposé dans /wp-content/mu-plugins/ — chargé automatiquement par WordPress,
  * pas besoin d'activation manuelle.
  *
  * Endpoints REST :
- *   POST /wp-json/pom/v1/register-token   ← app mobile enregistre son token
- *   DELETE /wp-json/pom/v1/register-token ← app mobile supprime son token (logout)
+ *   POST /wp-json/pom/v1/auth               ← connexion native (username + password WP)
+ *   POST /wp-json/pom/v1/register-token     ← app mobile enregistre son token
+ *   DELETE /wp-json/pom/v1/register-token   ← app mobile supprime son token (logout)
  *
  * Meta utilisateur :
  *   _pom_push_tokens  → JSON array de { token, platform, updated_at }
@@ -24,10 +27,26 @@ defined('ABSPATH') || exit;
 define('POM_EXPO_PUSH_URL', 'https://exp.host/--/api/v2/push/send');
 define('POM_USER_META_KEY', '_pom_push_tokens');
 define('POM_NAMESPACE', 'pom/v1');
+define('POM_APP_PASSWORD_NAME', 'Presellia Orders App');
 
 // ─── Enregistrement des routes REST ──────────────────────────────────────────
 
 add_action('rest_api_init', function () {
+
+    // ── Authentification native (connexion sans redirection navigateur) ────────
+    // Accepte username + password WordPress ordinaires, retourne un Application
+    // Password généré automatiquement. Sécurisé par rate-limiting (5 essais/h/IP).
+    register_rest_route(POM_NAMESPACE, '/auth', [
+        'methods'             => 'POST',
+        'callback'            => 'pom_native_auth',
+        'permission_callback' => '__return_true', // Publique — sécurisée par rate-limit
+        'args'                => [
+            'username' => ['required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field'],
+            'password' => ['required' => true,  'type' => 'string'],
+            'app_name' => ['required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => POM_APP_PASSWORD_NAME],
+        ],
+    ]);
+
     register_rest_route(POM_NAMESPACE, '/register-token', [
         [
             'methods'             => 'POST',
@@ -53,6 +72,76 @@ add_action('rest_api_init', function () {
 
 function pom_require_authenticated(): bool {
     return is_user_logged_in();
+}
+
+// ─── Authentification native — crée un Application Password automatiquement ───
+
+function pom_native_auth(WP_REST_Request $request): WP_REST_Response|WP_Error {
+    // ── Rate-limiting basique : 5 tentatives / IP / heure ────────────────────
+    $ip       = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $rate_key = 'pom_auth_rate_' . md5($ip);
+    $attempts = (int) get_transient($rate_key);
+    if ($attempts >= 5) {
+        return new WP_Error('too_many_attempts', 'Trop de tentatives. Réessayez dans une heure.', ['status' => 429]);
+    }
+    set_transient($rate_key, $attempts + 1, HOUR_IN_SECONDS);
+
+    $username = $request->get_param('username');
+    $password = $request->get_param('password');
+    $app_name = $request->get_param('app_name');
+
+    // ── Authentification WordPress standard ───────────────────────────────────
+    $user = wp_authenticate($username, $password);
+    if (is_wp_error($user)) {
+        // Message générique pour ne pas révéler si l'utilisateur existe
+        return new WP_Error('invalid_credentials', 'Identifiants incorrects.', ['status' => 401]);
+    }
+
+    // ── Vérification du rôle (agents Presellia seulement) ────────────────────
+    $allowed_roles = ['administrator', 'editor', 'shop_manager', 'partner'];
+    $user_roles    = (array) $user->roles;
+    if (empty(array_intersect($user_roles, $allowed_roles))) {
+        return new WP_Error('forbidden', 'Accès refusé. Rôle insuffisant.', ['status' => 403]);
+    }
+
+    // ── Vérifier que les Application Passwords sont activés ──────────────────
+    if (!class_exists('WP_Application_Passwords')) {
+        return new WP_Error('not_supported', 'Application Passwords non disponible sur ce serveur.', ['status' => 501]);
+    }
+
+    // ── Révoquer tout ancien mot de passe "Presellia Orders App" (idempotent) ─
+    $existing = WP_Application_Passwords::get_user_application_passwords($user->ID);
+    foreach ($existing as $app_pw) {
+        if (isset($app_pw['name']) && $app_pw['name'] === $app_name) {
+            WP_Application_Passwords::delete_application_password($user->ID, $app_pw['uuid']);
+        }
+    }
+
+    // ── Créer un nouveau Application Password ─────────────────────────────────
+    $created = WP_Application_Passwords::create_new_application_password($user->ID, [
+        'name' => $app_name,
+    ]);
+    if (is_wp_error($created)) {
+        return new WP_Error('creation_failed', 'Impossible de créer le mot de passe d\'application.', ['status' => 500]);
+    }
+
+    // $created[0] = le mot de passe en clair (disponible une seule fois)
+    [$plain_password] = $created;
+
+    // Réinitialiser le compteur de tentatives après succès
+    delete_transient($rate_key);
+
+    return new WP_REST_Response([
+        'success'      => true,
+        'wp_username'  => $user->user_login,
+        'app_password' => $plain_password, // Format "xxxx xxxx xxxx xxxx xxxx xxxx"
+        'user'         => [
+            'id'    => $user->ID,
+            'name'  => $user->display_name,
+            'email' => $user->user_email,
+            'roles' => $user_roles,
+        ],
+    ], 200);
 }
 
 // ─── Enregistrer un token ─────────────────────────────────────────────────────
@@ -157,15 +246,35 @@ function pom_send_push(array $tokens, string $title, string $body, array $data =
     }
 }
 
-// ─── Hook : nouvelle commande ─────────────────────────────────────────────────
+// ─── Déclencheurs de notifications de nouvelles commandes ──────────────────────
 
-add_action('woocommerce_new_order', function (int $order_id): void {
-    $order    = wc_get_order($order_id);
+function pom_notify_new_order(int $order_id): void {
+    static $notified_orders = [];
+    if (in_array($order_id, $notified_orders, true)) return;
+    $notified_orders[] = $order_id;
+
+    $order = wc_get_order($order_id);
     if (! $order) return;
 
     $customer = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
-    $total    = number_format((float) $order->get_total(), 0, ',', ' ') . ' F CFA';
-    $tokens   = pom_get_all_agent_tokens();
+    if (empty($customer)) {
+        $customer = trim($order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name());
+    }
+    
+    $currency_code = $order->get_currency();
+    $total_val = (float) $order->get_total();
+    
+    if ($currency_code === 'XOF') {
+        $total = number_format($total_val, 0, ',', ' ') . ' F CFA';
+    } elseif ($currency_code === 'USD') {
+        $total = '$' . number_format($total_val, 2, '.', ',');
+    } elseif ($currency_code === 'EUR') {
+        $total = number_format($total_val, 2, ',', ' ') . ' €';
+    } else {
+        $total = number_format($total_val, 2, ',', ' ') . ' ' . $currency_code;
+    }
+
+    $tokens = pom_get_all_agent_tokens();
 
     pom_send_push(
         $tokens,
@@ -176,7 +285,20 @@ add_action('woocommerce_new_order', function (int $order_id): void {
             'order_id' => $order_id,
         ]
     );
-}, 10, 1);
+}
+
+// 1. Déclencheur : Validation de commande sur la boutique (Frontend Checkout)
+add_action('woocommerce_checkout_order_processed', 'pom_notify_new_order', 10, 1);
+
+// 2. Déclencheur : Commande insérée via l'API REST WooCommerce (notre application mobile !)
+add_action('woocommerce_rest_insert_shop_order_object', function (WC_Order $order, WP_REST_Request $request, bool $creating): void {
+    if ($creating) {
+        pom_notify_new_order($order->get_id());
+    }
+}, 10, 3);
+
+// 3. Déclencheur : Commande manuelle créée dans l'administration WordPress (Backend Admin)
+add_action('woocommerce_process_shop_order_meta', 'pom_notify_new_order', 10, 1);
 
 // ─── Hook : changement de statut commande ─────────────────────────────────────
 

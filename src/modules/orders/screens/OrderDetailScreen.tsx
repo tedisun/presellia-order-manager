@@ -7,8 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
-import { fetchOrder, updateOrderStatus, addOrderNote } from '@services/woocommerce';
+import { fetchOrder, updateOrderStatus, addOrderNote, fetchOrderStatuses } from '@services/woocommerce';
 import { ALL_ORDER_STATUSES, getStatusLabel } from '@config/constants';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
@@ -17,6 +18,9 @@ import type { WCOrder, OrderStatus } from '@app-types/woocommerce';
 import type { OrdersStackParamList } from '@navigation/types';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
+
+type RoutePropType = RouteProp<OrdersStackParamList, 'OrderDetail'>;
+type NavProp = NativeStackNavigationProp<OrdersStackParamList, 'OrderDetail'>;
 
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 const TIMELINE_STEPS: { status: OrderStatus; label: string }[] = [
@@ -215,6 +219,21 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
     fontSize: BRANDING.fonts.sizeMD,
     fontWeight: BRANDING.fonts.weightSemiBold,
   },
+  refundBtn: {
+    borderWidth: 1.5,
+    borderColor: c.primary,
+    borderRadius: BRANDING.radius.md,
+    paddingVertical: BRANDING.spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: BRANDING.spacing.sm,
+    backgroundColor: 'transparent',
+  },
+  refundBtnText: {
+    color: c.primary,
+    fontSize: BRANDING.fonts.sizeMD,
+    fontWeight: BRANDING.fonts.weightSemiBold,
+  },
 
   lineItem: {
     flexDirection: 'row',
@@ -294,12 +313,33 @@ export default function OrderDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [availableStatuses, setAvailableStatuses] = useState<{ slug: string; label: string }[]>(ALL_ORDER_STATUSES);
 
   const load = async () => {
     try {
       const o = await fetchOrder(orderId);
       setOrder(o);
-      navigation.setOptions({ title: `Commande #${o.number}` });
+
+      try {
+        const statusesList = await fetchOrderStatuses();
+        setAvailableStatuses(statusesList.map((s) => ({ slug: s.slug, label: s.name })));
+      } catch (err) {
+        console.warn('[OrderDetail] Échec chargement statuts:', err);
+      }
+      
+      const isMutable = o.status === 'pending' || o.status === 'on-hold' || o.status === 'processing';
+      navigation.setOptions({
+        title: `Commande #${o.number}`,
+        headerRight: () => isMutable ? (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CreateOrder', { orderId: o.id })}
+            style={{ marginRight: 8, padding: 8 }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null
+      });
     } catch {
       Alert.alert('Erreur', 'Impossible de charger la commande.');
     } finally {
@@ -338,12 +378,40 @@ export default function OrderDetailScreen() {
 
   const handleSharePaymentLink = async () => {
     if (!order?.payment_url) return;
-    const message = `Bonjour ${order.billing.first_name},\n\nVoici votre lien de paiement pour la commande #${order.number} :\n\n${order.payment_url}\n\nMontant : ${order.total} FCFA\n\nMerci !`;
+    const currencyLabel = order.currency === 'XOF' ? 'FCFA' : order.currency;
+    const message = `Bonjour ${order.billing.first_name},\n\nVoici votre lien de paiement pour la commande #${order.number} :\n\n${order.payment_url}\n\nMontant : ${order.total} ${currencyLabel}\n\nMerci !`;
     try {
       await Share.share({ message });
     } catch {
       // user cancelled
     }
+  };
+
+  const handleRefund = () => {
+    if (!order) return;
+    Alert.alert(
+      'Effectuer le remboursement',
+      `Rembourser intégralement la commande #${order.number} (${order.total} ${order.currency === 'XOF' ? 'F' : order.currency}) ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Confirmer',
+          style: 'destructive',
+          onPress: async () => {
+            setUpdatingStatus(true);
+            try {
+              const updated = await updateOrderStatus(order.id, 'refunded');
+              setOrder(updated);
+              Alert.alert('Remboursée', `La commande #${order.number} a été remboursée avec succès.`);
+            } catch {
+              Alert.alert('Erreur', "Impossible d'effectuer le remboursement.");
+            } finally {
+              setUpdatingStatus(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleCall = (phone: string) => {
@@ -385,7 +453,7 @@ export default function OrderDetailScreen() {
             <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Modifier le statut</Text>
             <FlatList
-              data={ALL_ORDER_STATUSES}
+              data={availableStatuses}
               keyExtractor={(item) => item.slug}
               renderItem={({ item }) => {
                 const isCurrent = item.slug === order.status;
@@ -462,20 +530,36 @@ export default function OrderDetailScreen() {
                 </View>
                 <View style={styles.lineItemPrices}>
                   {hasDiscount && (
-                    <Text style={styles.priceStrike}>
-                      {(parseFloat(li.subtotal)).toLocaleString('fr-FR')} F
-                    </Text>
+                    <CurrencyText
+                      amount={li.subtotal}
+                      currency={order.currency}
+                      size="sm"
+                      style={{ textDecorationLine: 'line-through', opacity: 0.5 }}
+                    />
                   )}
-                  <CurrencyText amount={li.total} size="sm" bold={hasDiscount} />
+                  <CurrencyText amount={li.total} currency={order.currency} size="sm" bold={hasDiscount} />
                 </View>
               </View>
             );
           })}
 
           <View style={styles.divider} />
-          <SummaryRow label="Sous-total" value={subtotal} styles={styles} />
-          {discount > 0 && <SummaryRow label="Remise" value={-discount} valueColor={colors.success} styles={styles} />}
-          <SummaryRow label="Total" value={parseFloat(order.total)} bold styles={styles} />
+          <SummaryRow label="Sous-total" value={subtotal} currency={order.currency} styles={styles} />
+          {discount > 0 && <SummaryRow label="Remise" value={-discount} valueColor={colors.success} currency={order.currency} styles={styles} />}
+          <SummaryRow label="Total" value={parseFloat(order.total)} bold currency={order.currency} styles={styles} />
+
+          {order.status !== 'refunded' && order.status !== 'cancelled' && (
+            <TouchableOpacity
+              style={styles.refundBtn}
+              onPress={handleRefund}
+              disabled={updatingStatus}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.refundBtnText}>
+                {updatingStatus ? 'Traitement...' : 'Effectuer le remboursement'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </SectionCard>
 
         {/* Client */}
@@ -561,18 +645,24 @@ function InfoRow({
 }
 
 function SummaryRow({
-  label, value, bold, valueColor, styles,
+  label, value, bold, valueColor, styles, currency = 'XOF',
 }: {
-  label: string; value: number; bold?: boolean; valueColor?: string; styles: ReturnType<typeof makeStyles>;
+  label: string; value: number; bold?: boolean; valueColor?: string; styles: ReturnType<typeof makeStyles>; currency?: string;
 }) {
-  const formatted = Math.abs(value).toLocaleString('fr-FR', { minimumFractionDigits: 0 });
-  const sign = value < 0 ? '−' : '';
+  const sign = value < 0 ? '− ' : '';
   return (
     <View style={styles.summaryRow}>
       <Text style={[styles.summaryLabel, bold && styles.summaryBold]}>{label}</Text>
-      <Text style={[styles.summaryValue, bold && styles.summaryBold, valueColor ? { color: valueColor } : {}]}>
-        {sign}{formatted} F
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {value < 0 && <Text style={[styles.summaryValue, bold && styles.summaryBold, valueColor ? { color: valueColor } : {}]}>{sign}</Text>}
+        <CurrencyText
+          amount={Math.abs(value)}
+          currency={currency}
+          size={bold ? "lg" : "sm"}
+          bold={bold}
+          color={valueColor}
+        />
+      </View>
     </View>
   );
 }

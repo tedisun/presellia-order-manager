@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { WCCustomer, WCOrder } from '@app-types/woocommerce';
 
 interface Entry<T> {
@@ -7,15 +8,72 @@ interface Entry<T> {
 
 const store = new Map<string, Entry<unknown>>();
 
+// Liste des clés de cache que l'on souhaite rendre persistantes sur disque
+const PERSISTENT_KEYS = new Set<string>([
+  'products_all',
+  'products_partner',
+  'customers_recent',
+  'dashboard_stats_today',
+  'dashboard_stats_week',
+  'dashboard_stats_month',
+  'dashboard_stats_quarter',
+  'dashboard_stats_year'
+]);
+
 export const Cache = {
+  /**
+   * Initialise le cache persistant en chargeant les données depuis le disque (AsyncStorage) vers la mémoire.
+   * Doit être appelé une fois au démarrage de l'application.
+   */
+  async initialize(): Promise<void> {
+    try {
+      const keys = Array.from(PERSISTENT_KEYS);
+      const pairs = await AsyncStorage.multiGet(keys);
+      
+      const now = Date.now();
+      for (const [key, val] of pairs) {
+        if (val) {
+          try {
+            const entry = JSON.parse(val) as Entry<unknown>;
+            // Ne charger en mémoire que si l'entrée n'a pas expiré
+            if (entry.exp > now) {
+              store.set(key, entry);
+            } else {
+              await AsyncStorage.removeItem(key);
+            }
+          } catch {
+            await AsyncStorage.removeItem(key);
+          }
+        }
+      }
+      console.log('[Cache] Cache persistant chargé avec succès en mémoire.');
+    } catch (err) {
+      console.warn('[Cache] Échec de l\'initialisation du cache persistant:', err);
+    }
+  },
+
   set<T>(key: string, data: T, ttlMs: number): void {
-    store.set(key, { data, exp: Date.now() + ttlMs });
+    const exp = Date.now() + ttlMs;
+    const entry: Entry<T> = { data, exp };
+    
+    // Mettre à jour en mémoire de manière synchrone
+    store.set(key, entry);
+    
+    // Si la clé est persistante, sauvegarder sur disque de manière asynchrone en arrière-plan
+    if (PERSISTENT_KEYS.has(key)) {
+      AsyncStorage.setItem(key, JSON.stringify(entry)).catch((err) => {
+        console.warn(`[Cache] Échec de persistance pour la clé "${key}":`, err);
+      });
+    }
   },
 
   get<T>(key: string): T | null {
     const e = store.get(key) as Entry<T> | undefined;
     if (!e || Date.now() > e.exp) {
       store.delete(key);
+      if (PERSISTENT_KEYS.has(key)) {
+        AsyncStorage.removeItem(key).catch(() => {});
+      }
       return null;
     }
     return e.data;
@@ -23,12 +81,21 @@ export const Cache = {
 
   invalidate(key: string): void {
     store.delete(key);
+    if (PERSISTENT_KEYS.has(key)) {
+      AsyncStorage.removeItem(key).catch(() => {});
+    }
   },
 
   has(key: string): boolean {
     const e = store.get(key);
     return !!e && Date.now() <= e.exp;
   },
+
+  async clearAll(): Promise<void> {
+    store.clear();
+    const keys = Array.from(PERSISTENT_KEYS);
+    await AsyncStorage.multiRemove(keys).catch(() => {});
+  }
 };
 
 export const CACHE_KEYS = {

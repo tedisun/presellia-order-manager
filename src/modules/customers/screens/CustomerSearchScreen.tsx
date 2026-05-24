@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, ActivityIndicator,
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BRANDING } from '@config/branding';
-import { fetchCustomers, fetchGuestCustomers } from '@services/woocommerce';
+import { fetchCustomers, fetchGuestCustomers, fetchCustomerOrderCount } from '@services/woocommerce';
 import SearchBar from '@components/SearchBar';
 import EmptyState from '@components/EmptyState';
 import type { WCCustomer } from '@app-types/woocommerce';
@@ -119,8 +119,12 @@ export default function CustomerSearchScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingGuests, setLoadingGuests] = useState(false);
   const [searched, setSearched] = useState(false);
+  // Compteurs réels de commandes — peuplés en arrière-plan car orders_count WC est souvent 0
+  const [orderCounts, setOrderCounts] = useState<Record<number, number>>({});
+  const fetchCountsAbortRef = useRef<boolean>(false);
 
   const search = useCallback(async (q: string) => {
+    fetchCountsAbortRef.current = true; // annuler les fetches précédents
     if (q.length < 2) {
       // Revenir aux clients récents quand la recherche est effacée
       const { Cache, CACHE_KEYS } = await import('@services/cache');
@@ -136,6 +140,18 @@ export default function CustomerSearchScreen() {
       const registered = await fetchCustomers(q);
       setCustomers(registered);
       setLoading(false);
+
+      // Étape 1b : chargement des vrais compteurs de commandes en arrière-plan
+      fetchCountsAbortRef.current = false;
+      const abortSnapshot = fetchCountsAbortRef.current;
+      for (const customer of registered) {
+        if (customer.id > 0) {
+          fetchCustomerOrderCount(customer.id).then(count => {
+            if (fetchCountsAbortRef.current !== abortSnapshot) return; // annulé
+            setOrderCounts(prev => ({ ...prev, [customer.id]: count }));
+          }).catch(() => {});
+        }
+      }
 
       // Étape 2 : invités — chargés en arrière-plan, ajoutés sans bloquer
       setLoadingGuests(true);
@@ -231,7 +247,11 @@ export default function CustomerSearchScreen() {
               </View>
               {item.id !== 0 && (
                 <View style={styles.ordersMeta}>
-                  <Text style={styles.ordersCount}>{item.orders_count ?? 0}</Text>
+                  <Text style={styles.ordersCount}>
+                    {orderCounts[item.id] !== undefined
+                      ? orderCounts[item.id]
+                      : (item.orders_count ?? '…')}
+                  </Text>
                   <Text style={styles.ordersLabel}>cmd.</Text>
                 </View>
               )}
