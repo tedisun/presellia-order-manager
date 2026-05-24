@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, Pressable, RefreshControl, TextInput
+  View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, Pressable, RefreshControl, TextInput,
+  KeyboardAvoidingView, ScrollView, Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { useTheme } from '@context/ThemeContext';
@@ -76,6 +77,7 @@ type FilterType = 'all' | 'instock' | 'lowstock' | 'outofstock';
 export default function ProductsListScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
 
   const [products, setProducts] = useState<WCProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -368,17 +370,35 @@ export default function ProductsListScreen() {
         animationType="slide"
         onRequestClose={() => setSelectedProduct(null)}
       >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSelectedProduct(null)}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedProduct?.name}</Text>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setSelectedProduct(null)}>
-                <Ionicons name="close" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSelectedProduct(null)}>
+            <Pressable
+              style={[
+                styles.modalSheet,
+                {
+                  backgroundColor: colors.surface,
+                  paddingBottom: Math.max(insets.bottom, 20)
+                }
+              ]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{selectedProduct?.name}</Text>
+                <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setSelectedProduct(null)}>
+                  <Ionicons name="close" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
 
-            {selectedProduct && (
-              <View style={styles.modalScroll}>
+              {selectedProduct && (
+                <ScrollView
+                  style={{ flexGrow: 0 }}
+                  contentContainerStyle={{ gap: 14, paddingBottom: 10 }}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Catégorie</Text>
                   <Text style={styles.detailVal}>{selectedProduct.categories.map(c => c.name).join(', ') || 'Aucune'}</Text>
@@ -606,10 +626,11 @@ export default function ProductsListScreen() {
                     )}
                   </View>
                 )}
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
+                </ScrollView>
+              )}
+            </Pressable>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
