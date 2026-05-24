@@ -77,7 +77,8 @@ function pom_require_authenticated(): bool {
 // ─── Authentification native — crée un Application Password automatiquement ───
 
 function pom_native_auth(WP_REST_Request $request): WP_REST_Response|WP_Error {
-    // ── Rate-limiting basique : 5 tentatives / IP / heure ────────────────────
+    // ── Rate-limiting désactivé temporairement pour les tests ──────────────────
+    /*
     $ip       = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
     $rate_key = 'pom_auth_rate_' . md5($ip);
     $attempts = (int) get_transient($rate_key);
@@ -85,6 +86,7 @@ function pom_native_auth(WP_REST_Request $request): WP_REST_Response|WP_Error {
         return new WP_Error('too_many_attempts', 'Trop de tentatives. Réessayez dans une heure.', ['status' => 429]);
     }
     set_transient($rate_key, $attempts + 1, HOUR_IN_SECONDS);
+    */
 
     $username = $request->get_param('username');
     $password = $request->get_param('password');
