@@ -125,12 +125,10 @@ export default function LoginScreen() {
     }
     const cleanUrl = form.store_url.replace(/\/$/, ''); // enlever le slash de fin
     
-    // Pour Presellia, le slug admin sécurisé et renommé est "superu".
-    // On redirige vers superu avec un redirect_to pointant vers l'autorisation,
-    // ce qui force l'utilisateur à se connecter via superu s'il n'est pas connecté,
-    // puis WordPress le redirigera vers l'écran d'autorisation standard !
-    const redirectUrl = `${cleanUrl}/wp-admin/authorize-application.php?app_name=Presellia Orders&success_url=presellia-orders://auth`;
-    const authUrl = `${cleanUrl}/superu?redirect_to=${encodeURIComponent(redirectUrl)}`;
+    // On ouvre directement la page d'autorisation de mot de passe d'application de WordPress.
+    // Si l'utilisateur est connecté sur son navigateur, l'écran d'autorisation s'affiche en un clic !
+    // Sinon, WordPress le redirigera vers sa page de login puis le ramènera ici.
+    const authUrl = `${cleanUrl}/wp-admin/authorize-application.php?app_name=Presellia Orders&success_url=presellia-orders://auth`;
     
     Linking.openURL(authUrl).catch(() => {
       Alert.alert('Erreur', "Impossible d'ouvrir le navigateur.");
@@ -196,7 +194,7 @@ export default function LoginScreen() {
             </View>
 
             <Text style={[styles.sectionLabel, { marginTop: BRANDING.spacing.xs }]}>
-              Identifiants WordPress
+              Identifiants de connexion
             </Text>
 
             <View style={styles.field}>
@@ -213,12 +211,12 @@ export default function LoginScreen() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Mot de passe WordPress</Text>
+              <Text style={styles.label}>Mot de passe (standard ou d'application)</Text>
               <TextInput
                 style={styles.input}
                 value={form.wp_app_password}
                 onChangeText={(v) => handleChange('wp_app_password', v)}
-                placeholder="Saisissez votre mot de passe standard"
+                placeholder="Saisissez votre mot de passe WordPress ou d'application"
                 placeholderTextColor={colors.textMuted}
                 secureTextEntry={!showPasswords}
                 autoCapitalize="none"
@@ -236,8 +234,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <Text style={styles.hint}>
-              Saisissez vos identifiants de connexion WordPress habituels.{"\n"}
-              L'application s'occupe de s'authentifier de manière sécurisée.
+              Saisissez vos identifiants WordPress habituels (nom d'utilisateur + mot de passe standard ou mot de passe d'application généré dans votre profil WordPress).
             </Text>
 
             {/* Erreur */}

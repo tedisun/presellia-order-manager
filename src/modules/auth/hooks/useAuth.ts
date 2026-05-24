@@ -88,24 +88,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             finalAppPassword = authData.app_password;
             wpUser = authData.user;
           }
-        } else if (
-          nativeAuthRes.status === 401 ||
-          nativeAuthRes.status === 403 ||
-          nativeAuthRes.status === 429
-        ) {
+        } else if (nativeAuthRes.status === 429) {
           const errData = await nativeAuthRes.json().catch(() => ({}));
-          throw new Error(errData.message || 'Identifiants incorrects.');
+          throw new Error(errData.message || 'Trop de tentatives. Réessayez plus tard.');
         }
       } catch (nativeErr: any) {
-        // Si c'est une erreur d'identifiants ou de rate-limiting explicite, on la propage
-        if (
-          nativeErr.message === 'Identifiants incorrects.' ||
-          nativeErr.message.includes('Trop de tentatives') ||
-          nativeErr.message.includes('Accès refusé')
-        ) {
+        // Seule l'erreur de rate-limit (429) bloque la tentative.
+        // Les autres erreurs (401 identifiants incorrects pour mot de passe d'application, 404 si plugin absent...)
+        // doivent passer silencieusement pour tenter le fallback Basic Auth standard.
+        if (nativeErr.message.includes('Trop de tentatives')) {
           throw nativeErr;
         }
-        // Sinon (404, pas de plugin...), on passe silencieusement au fallback Basic Auth
       }
 
       // 2. Fallback : vérification credentials standards via Basic Auth
