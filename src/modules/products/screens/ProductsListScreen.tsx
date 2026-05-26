@@ -380,7 +380,7 @@ export default function ProductsListScreen() {
                 styles.modalSheet,
                 {
                   backgroundColor: colors.surface,
-                  paddingBottom: Math.max(insets.bottom, 20)
+                  paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20)
                 }
               ]}
               onPress={(e) => e.stopPropagation()}

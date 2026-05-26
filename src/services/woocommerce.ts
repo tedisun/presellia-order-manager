@@ -4,7 +4,7 @@
 
 import { USE_MOCK, WC_API_PATH, PPB_API_PATH, ORDERS_PER_PAGE, CUSTOMERS_PER_PAGE, PRODUCTS_PER_PAGE } from '@config/constants';
 import { Storage } from './storage';
-import type { WCOrder, WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, DashboardStats, OrderStatus, WCOrderStatus } from '@app-types/woocommerce';
+import type { WCOrder, WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, DashboardStats, OrderStatus, WCOrderStatus, WCOrderNote } from '@app-types/woocommerce';
 import type { DashboardPeriod } from '@config/constants';
 
 // ─── Erreurs ──────────────────────────────────────────────────────────────────
@@ -142,6 +142,17 @@ export async function addOrderNote(id: number, note: string): Promise<void> {
     method: 'POST',
     body: JSON.stringify({ note, customer_note: false }),
   });
+}
+
+export async function fetchOrderNotes(orderId: number): Promise<WCOrderNote[]> {
+  if (USE_MOCK) {
+    const { simulateDelay } = await import('@modules/orders/mock/ordersMock');
+    return simulateDelay<WCOrderNote[]>([
+      { id: 1, author: 'système', date_created: new Date(Date.now() - 3600000).toISOString(), note: 'Commande créée manuellement.', customer_note: false },
+      { id: 2, author: 'admin', date_created: new Date().toISOString(), note: 'Appel client passé. Le client confirme les détails.', customer_note: false },
+    ], 200);
+  }
+  return wcFetch<WCOrderNote[]>(`${WC_API_PATH}/orders/${orderId}/notes`);
 }
 
 export async function createOrder(payload: CreateOrderPayload): Promise<WCOrder> {

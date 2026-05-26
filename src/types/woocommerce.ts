@@ -256,3 +256,12 @@ export interface WCOrderStatus {
   slug: string;
   name: string;
 }
+
+// ─── Notes de commande WooCommerce ───────────────────────────────────────────
+export interface WCOrderNote {
+  id: number;
+  author: string;
+  date_created: string;
+  note: string;
+  customer_note: boolean;
+}

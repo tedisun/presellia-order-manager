@@ -33,6 +33,7 @@ interface LineItemDraft {
   quantity:     number;
   discountType: 'none' | 'percent' | 'fixed';
   discountValue: number;
+  custom_email?: string;
 }
 
 function variationLabel(v: WCProductVariation): string {
@@ -589,6 +590,8 @@ export default function CreateOrderScreen() {
                 discountValue = subtotalPrice - totalPrice;
               }
 
+              const customEmailMeta = item.meta_data?.find((m: any) => m.key === 'Email')?.value;
+
               draftedItems.push({
                 product: foundProduct,
                 variation: foundVariation,
@@ -596,9 +599,11 @@ export default function CreateOrderScreen() {
                 quantity: item.quantity,
                 discountType,
                 discountValue,
+                custom_email: customEmailMeta ? String(customEmailMeta) : undefined,
               });
             } catch (errItem) {
               console.warn('[EditMode] Erreur lors de l\'intégration de l\'article:', errItem);
+              const customEmailMeta = item.meta_data?.find((m: any) => m.key === 'Email')?.value;
               draftedItems.push({
                 product: {
                   id: item.product_id,
@@ -618,6 +623,7 @@ export default function CreateOrderScreen() {
                 quantity: item.quantity,
                 discountType: 'none',
                 discountValue: 0,
+                custom_email: customEmailMeta ? String(customEmailMeta) : undefined,
               });
             }
           }
@@ -680,6 +686,11 @@ export default function CreateOrderScreen() {
           quantity:     li.quantity,
           subtotal:     (li.unit_price * li.quantity).toFixed(2),
           total:        getLineTotal(li).toFixed(2),
+          ...(li.custom_email ? {
+            meta_data: [
+              { key: 'Email', value: li.custom_email }
+            ]
+          } : {})
         })),
         payment_method:       payment.mode === 'link' ? 'woocommerce_payments' : 'offline',
         payment_method_title: payment.mode === 'link' ? 'Paiement en ligne' : 'Paiement hors ligne',
@@ -1597,6 +1608,19 @@ function StepProducts({
                     )}
                   </View>
                   <CurrencyText amount={getLineTotal(li)} currency={currency} size="sm" bold />
+                </View>
+                {/* Champ Email / Note personnalisé facultatif */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: colors.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: BRANDING.radius.sm, borderWidth: 1, borderColor: colors.border }}>
+                  <Ionicons name="mail-outline" size={14} color={colors.textMuted} />
+                  <TextInput
+                    style={{ flex: 1, color: colors.textPrimary, fontSize: 11, padding: 0, height: 20 }}
+                    value={li.custom_email || ''}
+                    onChangeText={(v) => updateItem(idx, { custom_email: v })}
+                    placeholder="Email de licence / Note (Optionnel)"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
                 </View>
               </View>
             ))}

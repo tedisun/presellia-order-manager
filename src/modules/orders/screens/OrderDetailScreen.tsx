@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, FlatList,
   StyleSheet, Alert, Share, RefreshControl, Linking, Modal,
+  TextInput, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -9,12 +10,12 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
-import { fetchOrder, updateOrderStatus, addOrderNote, fetchOrderStatuses } from '@services/woocommerce';
+import { fetchOrder, updateOrderStatus, addOrderNote, fetchOrderStatuses, fetchOrderNotes } from '@services/woocommerce';
 import { ALL_ORDER_STATUSES, getStatusLabel } from '@config/constants';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
 import LoadingSpinner from '@components/LoadingSpinner';
-import type { WCOrder, OrderStatus } from '@app-types/woocommerce';
+import type { WCOrder, OrderStatus, WCOrderNote } from '@app-types/woocommerce';
 import type { OrdersStackParamList } from '@navigation/types';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
@@ -315,6 +316,11 @@ export default function OrderDetailScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [availableStatuses, setAvailableStatuses] = useState<{ slug: string; label: string }[]>(ALL_ORDER_STATUSES);
 
+  // Notes de commande
+  const [notes, setNotes] = useState<WCOrderNote[]>([]);
+  const [newNote, setNewNote] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+
   const load = async () => {
     try {
       const o = await fetchOrder(orderId);
@@ -325,6 +331,13 @@ export default function OrderDetailScreen() {
         setAvailableStatuses(statusesList.map((s) => ({ slug: s.slug, label: s.name })));
       } catch (err) {
         console.warn('[OrderDetail] Échec chargement statuts:', err);
+      }
+
+      try {
+        const orderNotes = await fetchOrderNotes(orderId);
+        setNotes(orderNotes);
+      } catch (errNotes) {
+        console.warn('[OrderDetail] Échec chargement notes:', errNotes);
       }
       
       const isMutable = o.status === 'pending' || o.status === 'on-hold' || o.status === 'processing';
@@ -424,6 +437,22 @@ export default function OrderDetailScreen() {
     Linking.openURL(`mailto:${email}`).catch(() =>
       Alert.alert('Erreur', 'Impossible d\'ouvrir l\'email.')
     );
+  };
+
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    setAddingNote(true);
+    try {
+      await addOrderNote(orderId, newNote.trim());
+      setNewNote('');
+      const updatedNotes = await fetchOrderNotes(orderId);
+      setNotes(updatedNotes);
+      Alert.alert('Succès', 'Note ajoutée avec succès.');
+    } catch {
+      Alert.alert('Erreur', "Impossible d'ajouter la note.");
+    } finally {
+      setAddingNote(false);
+    }
   };
 
   const getCreatedBy = () =>
@@ -601,6 +630,74 @@ export default function OrderDetailScreen() {
             {order.customer_id > 0 ? <InfoRow label="ID Client" value={`#${order.customer_id}`} styles={styles} /> : null}
           </SectionCard>
         )}
+
+        {/* Notes de la commande */}
+        <SectionCard title="Notes de la commande" styles={styles}>
+          {notes.length === 0 ? (
+            <Text style={{ color: colors.textMuted, fontSize: 13, fontStyle: 'italic', marginBottom: 12 }}>Aucune note sur cette commande.</Text>
+          ) : (
+            <View style={{ gap: 10, marginBottom: 12 }}>
+              {notes.map((n) => (
+                <View key={n.id} style={{ backgroundColor: colors.surfaceElevated, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>
+                      {n.author === 'system' || n.author === 'système' ? 'Système' : n.author}
+                    </Text>
+                    <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                      {new Date(n.date_created).toLocaleDateString('fr-FR', {
+                        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                      })}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 12, color: colors.textPrimary }}>{n.note}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Formulaire d'ajout de note */}
+          <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>Ajouter une note interne</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                style={{
+                  flex: 1,
+                  backgroundColor: colors.surfaceElevated,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 8,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  color: colors.textPrimary,
+                  fontSize: 13,
+                  minHeight: 38
+                }}
+                value={newNote}
+                onChangeText={setNewNote}
+                placeholder="Saisissez une note..."
+                placeholderTextColor={colors.textMuted}
+                multiline
+              />
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingHorizontal: 16,
+                  justifyContent: 'center',
+                  borderRadius: 8,
+                  opacity: newNote.trim() ? 1 : 0.6
+                }}
+                onPress={handleAddNote}
+                disabled={addingNote || !newNote.trim()}
+              >
+                {addingNote ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Ionicons name="send" size={16} color="#FFF" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SectionCard>
       </ScrollView>
     </SafeAreaView>
   );
