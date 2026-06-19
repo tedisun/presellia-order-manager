@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,7 +17,7 @@ import {
 } from '@services/woocommerce';
 import CurrencyText from '@components/CurrencyText';
 import SearchBar from '@components/SearchBar';
-import type { WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, OfflinePaymentDetail } from '@app-types/woocommerce';
+import type { WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, OfflinePaymentDetail, WCOrder } from '@app-types/woocommerce';
 import type { OrdersStackParamList } from '@navigation/types';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
@@ -27,6 +27,7 @@ type NavProp = NativeStackNavigationProp<OrdersStackParamList, 'CreateOrder'>;
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 interface LineItemDraft {
+  id?:          number;   // ID unique de la ligne d'article dans la commande
   product:      WCProduct;
   variation?:   WCProductVariation;
   unit_price:   number;   // prix effectif (variation ou produit, partenaire ou standard)
@@ -506,6 +507,10 @@ export default function CreateOrderScreen() {
   const [currency, setCurrency] = useState<string>('XOF');
   const [submitting, setSubmitting] = useState(false);
   const [loadingOrder, setLoadingOrder] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  const originalOrderRef = useRef<WCOrder | null>(null);
+  const isSubmittedRef = useRef(false);
 
   // Charger la commande existante si orderId est présent en paramètre
   useEffect(() => {
@@ -514,6 +519,7 @@ export default function CreateOrderScreen() {
         setLoadingOrder(true);
         try {
           const order = await fetchOrder(route.params.orderId);
+          originalOrderRef.current = order;
           
           // Préremplir le client
           const prefilledCustomer: WCCustomer = {
@@ -593,6 +599,7 @@ export default function CreateOrderScreen() {
               const customEmailMeta = item.meta_data?.find((m: any) => m.key === 'Email')?.value;
 
               draftedItems.push({
+                id: item.id,
                 product: foundProduct,
                 variation: foundVariation,
                 unit_price: item.price,
@@ -605,6 +612,7 @@ export default function CreateOrderScreen() {
               console.warn('[EditMode] Erreur lors de l\'intégration de l\'article:', errItem);
               const customEmailMeta = item.meta_data?.find((m: any) => m.key === 'Email')?.value;
               draftedItems.push({
+                id: item.id,
                 product: {
                   id: item.product_id,
                   name: item.name,
@@ -640,25 +648,84 @@ export default function CreateOrderScreen() {
     loadOrderToEdit();
   }, [route.params?.orderId]);
 
+  const hasUnsavedChanges = useCallback(() => {
+    const isEditing = !!route.params?.orderId;
+    if (!isEditing) {
+      return customer !== null || lineItems.length > 0;
+    }
+
+    const original = originalOrderRef.current;
+    if (!original) return false;
+
+    if (customer?.id !== original.customer_id) return true;
+    if (currency !== (original.currency || 'XOF')) return true;
+
+    const originalIsOffline = original.payment_method === 'offline' || original.payment_method === 'ppay_offline';
+    const originalOfflineDetail = original.meta_data.find(m => m.key === '_presellia_payment_detail')?.value || null;
+    const currentIsOffline = payment.mode === 'offline';
+    if (currentIsOffline !== originalIsOffline) return true;
+    if (currentIsOffline && payment.detail !== originalOfflineDetail) return true;
+
+    if (lineItems.length !== original.line_items.length) return true;
+
+    for (const li of lineItems) {
+      const origLi = original.line_items.find(item => item.id === li.id);
+      if (!origLi) return true;
+
+      if (li.product.id !== origLi.product_id) return true;
+      if ((li.variation?.id || 0) !== (origLi.variation_id || 0)) return true;
+      if (li.quantity !== origLi.quantity) return true;
+      if (li.unit_price !== origLi.price) return true;
+
+      const origSubtotal = parseFloat(origLi.subtotal || origLi.total);
+      const origTotal = parseFloat(origLi.total);
+      let origDiscountType: 'none' | 'percent' | 'fixed' = 'none';
+      let origDiscountValue = 0;
+      if (origSubtotal > origTotal) {
+        origDiscountType = 'fixed';
+        origDiscountValue = origSubtotal - origTotal;
+      }
+      if (li.discountType !== origDiscountType) return true;
+      if (li.discountValue !== origDiscountValue) return true;
+
+      const origEmail = origLi.meta_data?.find((m: any) => m.key === 'Email')?.value || undefined;
+      if (li.custom_email !== origEmail) return true;
+    }
+
+    return false;
+  }, [route.params?.orderId, customer, lineItems, currency, payment]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (isSubmittedRef.current || !hasUnsavedChanges()) {
+        return;
+      }
+
+      e.preventDefault();
+
+      Alert.alert(
+        route.params?.orderId ? 'Quitter la modification ?' : 'Quitter la création ?',
+        route.params?.orderId ? 'Toutes les modifications non enregistrées seront perdues.' : 'Toutes les données saisies seront perdues.',
+        [
+          { text: 'Continuer', style: 'cancel', onPress: () => {} },
+          {
+            text: 'Quitter',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges, route.params?.orderId]);
+
   const goBack = () => {
     if (step > 1) {
       setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
       return;
     }
-    // Étape 1 : confirmer si des données ont déjà été saisies
-    const hasDraft = customer !== null || lineItems.length > 0;
-    if (hasDraft) {
-      Alert.alert(
-         route.params?.orderId ? 'Annuler l\'édition ?' : 'Annuler la commande ?',
-         route.params?.orderId ? 'Toutes les modifications non enregistrées seront perdues.' : 'Toutes les données saisies seront perdues.',
-        [
-          { text: 'Continuer la saisie', style: 'cancel' },
-          { text: 'Annuler', style: 'destructive', onPress: () => navigation.goBack() },
-        ]
-      );
-    } else {
-      navigation.goBack();
-    }
+    navigation.goBack();
   };
 
   const total = lineItems.reduce((s, li) => s + getLineTotal(li), 0);
@@ -680,18 +747,29 @@ export default function CreateOrderScreen() {
           city:       customer.billing.city,
           country:    customer.billing.country || 'BF',
         },
-        line_items: lineItems.map((li) => ({
-          product_id:   li.product.id,
-          ...(li.variation ? { variation_id: li.variation.id } : {}),
-          quantity:     li.quantity,
-          subtotal:     (li.unit_price * li.quantity).toFixed(2),
-          total:        getLineTotal(li).toFixed(2),
-          ...(li.custom_email ? {
-            meta_data: [
-              { key: 'Email', value: li.custom_email }
-            ]
-          } : {})
-        })),
+        line_items: [
+          ...lineItems.map((li) => ({
+            ...(li.id ? { id: li.id } : {}),
+            product_id:   li.product.id,
+            ...(li.variation ? { variation_id: li.variation.id } : {}),
+            quantity:     li.quantity,
+            subtotal:     (li.unit_price * li.quantity).toFixed(2),
+            total:        getLineTotal(li).toFixed(2),
+            ...(li.custom_email ? {
+              meta_data: [
+                { key: 'Email', value: li.custom_email }
+              ]
+            } : {})
+          })),
+          ...(originalOrderRef.current
+            ? originalOrderRef.current.line_items
+                .filter((origItem) => !lineItems.some((li) => li.id === origItem.id))
+                .map((origItem) => ({
+                  id: origItem.id,
+                  product_id: null,
+                }))
+            : [])
+        ],
         payment_method:       payment.mode === 'link' ? 'woocommerce_payments' : 'offline',
         payment_method_title: payment.mode === 'link' ? 'Paiement en ligne' : 'Paiement hors ligne',
         set_paid: payment.mode === 'offline',
@@ -705,18 +783,44 @@ export default function CreateOrderScreen() {
       let targetOrderId = route.params?.orderId;
 
       if (isEditing && targetOrderId) {
+        isSubmittedRef.current = true;
         await updateOrder(targetOrderId, payload);
+        navigation.replace('OrderDetail', { orderId: targetOrderId });
       } else {
-        const created = await createOrder(payload);
-        targetOrderId = created.id;
-      }
+        try {
+          const created = await createOrder(payload);
+          targetOrderId = created.id;
+          isSubmittedRef.current = true;
 
-      // Fix téléphone bug WC
-      if (customer.id > 0 && customer.billing.phone) {
-         await syncCustomerPhone(customer.id, customer.billing.phone).catch(() => {});
-      }
+          // Fix téléphone bug WC
+          if (customer.id > 0 && customer.billing.phone) {
+             await syncCustomerPhone(customer.id, customer.billing.phone).catch(() => {});
+          }
 
-      navigation.replace('OrderDetail', { orderId: targetOrderId });
+          navigation.replace('OrderDetail', { orderId: targetOrderId });
+        } catch (err: any) {
+          const isNetworkError = !err.status || err.message?.includes('Network') || err.message?.includes('fetch') || err.status === 408 || err.status === 429 || err.status >= 500;
+          if (isNetworkError) {
+            const { OfflineQueue } = await import('@services/offlineQueue');
+            await OfflineQueue.enqueue(payload);
+            isSubmittedRef.current = true;
+            Alert.alert(
+              'Mode Hors-ligne',
+              'Connexion internet indisponible. La commande a été enregistrée localement dans la file d\'attente hors-ligne et sera synchronisée automatiquement dès le rétablissement du réseau.',
+              [
+                {
+                  text: 'D\'accord',
+                  onPress: () => {
+                    navigation.navigate('OrdersList' as any);
+                  }
+                }
+              ]
+            );
+          } else {
+            throw err;
+          }
+        }
+      }
     } catch (err) {
       Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible d\'enregistrer la commande.');
     } finally {
@@ -1292,6 +1396,7 @@ function StepProducts({
   colors: BrandColors;
   currency: string;
 }) {
+  const insets = useSafeAreaInsets();
   const [allProducts, setAllProducts] = useState<WCProduct[]>([]);
   const [topProducts, setTopProducts] = useState<WCProduct[]>([]);
   const [query, setQuery] = useState('');
@@ -1498,7 +1603,7 @@ function StepProducts({
       <Modal visible={showVariationModal} transparent animationType="slide" onRequestClose={() => setShowVariationModal(false)}>
         <View style={styles.variantModal}>
           <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setShowVariationModal(false)} />
-          <View style={styles.variantSheet}>
+          <View style={[styles.variantSheet, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20) }]}>
             <View style={styles.variantHeader}>
               <Text style={styles.variantTitle} numberOfLines={2}>{variationProduct?.name}</Text>
               <TouchableOpacity onPress={() => setShowVariationModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>

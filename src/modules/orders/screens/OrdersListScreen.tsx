@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, RefreshControl, ScrollView, LayoutAnimation,
-  Platform, UIManager,
+  Platform, UIManager, AppState, type AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { fetchOrders } from '@services/woocommerce';
+import { Cache, CACHE_KEYS } from '@services/cache';
 import OrderRow from '../components/OrderRow';
 import SearchBar from '@components/SearchBar';
 import EmptyState from '@components/EmptyState';
@@ -226,33 +227,90 @@ export default function OrdersListScreen() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const load = useCallback(async (q = search) => {
+  const lastUpdateRef = useRef<Date | null>(null);
+
+  // Charger le cache persisté de commandes au montage de l'écran
+  useEffect(() => {
     try {
+      const cached = Cache.get<WCOrder[]>(CACHE_KEYS.ORDERS_ALL);
+      if (cached && cached.length > 0) {
+        setAllOrders(cached);
+        setLoading(false);
+        // On initialise lastUpdateRef avec la date courante (considéré comme frais)
+        lastUpdateRef.current = new Date();
+      }
+    } catch (err) {
+      console.warn('[OrdersListScreen] Échec chargement cache initial:', err);
+    }
+  }, []);
+
+  const load = useCallback(async (q = search, isForce = false) => {
+    try {
+      // Synchronisation de la file d'attente hors-ligne en arrière-plan
+      if (!q) {
+        try {
+          const { OfflineQueue } = await import('@services/offlineQueue');
+          await OfflineQueue.syncQueue();
+        } catch (err) {
+          console.warn('[OfflineQueue] Synchro échouée:', err);
+        }
+      }
+
       const data = await fetchOrders({ search: q || undefined });
       setAllOrders(data);
-      setLastUpdate(new Date());
-      // Mise à jour du cache clients récents depuis les dernières commandes
+      const now = new Date();
+      setLastUpdate(now);
+      lastUpdateRef.current = now;
+
+      // Sauvegarde dans le cache persistant si pas de recherche
       if (!q) {
-        const { Cache, CACHE_KEYS, buildRecentCustomersFromOrders } = await import('@services/cache');
+        const ORDERS_CACHE_TTL = 12 * 60 * 60 * 1000; // 12h
+        Cache.set(CACHE_KEYS.ORDERS_ALL, data, ORDERS_CACHE_TTL);
+
+        const { buildRecentCustomersFromOrders } = await import('@services/cache');
         const { RECENT_CUSTOMERS_CACHE_TTL } = await import('@config/constants');
         Cache.set(CACHE_KEYS.RECENT_CUSTOMERS, buildRecentCustomersFromOrders(data), RECENT_CUSTOMERS_CACHE_TTL);
       }
-    } catch {
-      // garder les données précédentes
+    } catch (err) {
+      console.warn('[OrdersListScreen] Échec synchronisation:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [search]);
 
-  useEffect(() => { load(); }, []);
+  // Sync au focus avec staleness check de 2 minutes (sauf si recherche active)
+  useFocusEffect(
+    useCallback(() => {
+      if (search) return; // ne pas perturber la recherche
+      const now = new Date();
+      const needsSync = !lastUpdateRef.current || (now.getTime() - lastUpdateRef.current.getTime() > 2 * 60 * 1000);
+      if (needsSync) {
+        load();
+      }
+    }, [load, search])
+  );
+
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appStateRef.current !== 'active' && next === 'active') {
+        load();
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [load]);
 
   useEffect(() => {
     const timer = setTimeout(() => load(search), 400);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const onRefresh = () => { setRefreshing(true); load(); };
+  const onRefresh = () => {
+    setRefreshing(true);
+    load(search, true);
+  };
 
   const toggleFilters = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

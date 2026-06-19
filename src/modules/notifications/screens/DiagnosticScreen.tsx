@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Share, Platform,
+  ActivityIndicator, Share, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -10,7 +10,7 @@ import { BRANDING } from '@config/branding';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
 import { logger, type LogEntry } from '@services/logger';
-import { registerPushToken, checkPomStatus } from '@services/notifications';
+import { registerPushToken, checkPomStatus, sendTestPush } from '@services/notifications';
 import { Storage } from '@services/storage';
 
 const LEVEL_COLOR = { info: '#4ade80', warn: '#facc15', error: '#f87171' };
@@ -22,7 +22,7 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
   title:       { flex: 1, fontSize: BRANDING.fonts.sizeLG, fontWeight: BRANDING.fonts.weightBold, color: c.textPrimary },
   backBtn:     { padding: 4 },
   shareBtn:    { padding: 4 },
-  section:     { backgroundColor: c.surface, borderRadius: BRANDING.radius.md, marginHorizontal: BRANDING.spacing.lg, marginTop: BRANDING.spacing.md, padding: BRANDING.spacing.md, borderWidth: 1, borderColor: c.border, gap: BRANDING.spacing.sm },
+ section:     { backgroundColor: c.surface, borderRadius: BRANDING.radius.md, marginHorizontal: BRANDING.spacing.lg, marginTop: BRANDING.spacing.md, padding: BRANDING.spacing.md, borderWidth: 1, borderColor: c.border, gap: BRANDING.spacing.sm },
   sectionTitle:{ fontSize: BRANDING.fonts.sizeXS, fontWeight: BRANDING.fonts.weightSemiBold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
   row:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   label:       { fontSize: BRANDING.fonts.sizeSM, color: c.textSecondary },
@@ -39,6 +39,8 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
   logMsg:      { flex: 1, fontSize: 10, color: c.textSecondary, lineHeight: 14 },
   clearBtn:    { fontSize: BRANDING.fonts.sizeXS, color: c.error, padding: 4 },
   logHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  codeBlock:   { backgroundColor: c.background, borderColor: c.border, borderWidth: 1, borderRadius: BRANDING.radius.sm, padding: BRANDING.spacing.sm, marginTop: 4, width: '100%' },
+  codeText:    { fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 10, color: c.textSecondary, lineHeight: 14 },
 });
 
 interface PomStatus {
@@ -46,6 +48,7 @@ interface PomStatus {
   registered: boolean;
   token_count?: number;
   error?: string;
+  last_push_log?: string;
 }
 
 export default function DiagnosticScreen() {
@@ -58,6 +61,7 @@ export default function DiagnosticScreen() {
   const [pomStatus, setPomStatus]   = useState<PomStatus | null>(null);
   const [checkingPom, setCheckingPom] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
   const [logs, setLogs]             = useState<LogEntry[]>(logger.getEntries());
 
   // Charger infos au mount
@@ -89,6 +93,33 @@ export default function DiagnosticScreen() {
     setPushToken(token ?? null);
     setRegistering(false);
     checkPom();
+  }, [checkPom]);
+
+  const handleTestPush = useCallback(async () => {
+    setTestingPush(true);
+    logger.info('diag', 'Envoi d\'un push de test demandé');
+    try {
+      const res = await sendTestPush();
+      if (res.success) {
+        Alert.alert(
+          'Succès',
+          `Notification transmise à Expo !\n\nExpo ID/Détail : ${res.details || 'Aucun détail'}`,
+          [{ text: 'OK', onPress: checkPom }]
+        );
+      } else {
+        Alert.alert(
+          'Échec',
+          `Erreur : ${res.message}\n\nDétail : ${res.details || 'Aucun détail'}`
+        );
+      }
+    } catch (err) {
+      Alert.alert(
+        'Erreur',
+        `Exception lors du test : ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setTestingPush(false);
+    }
   }, [checkPom]);
 
   const handleShareLogs = useCallback(() => {
@@ -203,6 +234,15 @@ export default function DiagnosticScreen() {
                 </Text>
               )}
 
+              {pomStatus.last_push_log && (
+                <View style={{ marginTop: BRANDING.spacing.xs, gap: 4 }}>
+                  <Text style={styles.sectionTitle}>Dernier log d'envoi</Text>
+                  <View style={styles.codeBlock}>
+                    <Text style={styles.codeText}>{pomStatus.last_push_log}</Text>
+                  </View>
+                </View>
+              )}
+
               {!pomStatus.reachable && (
                 <Text style={[styles.label, { lineHeight: 18, marginTop: 4 }]}>
                   Le mu-plugin n'est pas installé. Déployez{' '}
@@ -211,14 +251,35 @@ export default function DiagnosticScreen() {
                 </Text>
               )}
 
-              <TouchableOpacity
-                style={[styles.actionBtn, checkingPom && { opacity: 0.6 }]}
-                onPress={checkPom}
-                disabled={checkingPom}
-              >
-                <Ionicons name="refresh-outline" size={14} color={colors.primary} />
-                <Text style={styles.actionText}>Revérifier</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: BRANDING.spacing.sm, marginTop: BRANDING.spacing.xs, flexWrap: 'wrap' }}>
+                {pomStatus.reachable && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, testingPush && { opacity: 0.6 }]}
+                    onPress={handleTestPush}
+                    disabled={testingPush || checkingPom}
+                  >
+                    {testingPush
+                      ? <ActivityIndicator size="small" color={colors.primary} />
+                      : <Ionicons name="paper-plane-outline" size={14} color={colors.primary} />
+                    }
+                    <Text style={styles.actionText}>
+                      {testingPush ? 'Envoi…' : 'Tester les notifications'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.actionBtn, checkingPom && { opacity: 0.6 }]}
+                  onPress={checkPom}
+                  disabled={checkingPom || testingPush}
+                >
+                  {checkingPom
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Ionicons name="refresh-outline" size={14} color={colors.primary} />
+                  }
+                  <Text style={styles.actionText}>{checkingPom ? 'Revérification…' : 'Revérifier'}</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
         </View>

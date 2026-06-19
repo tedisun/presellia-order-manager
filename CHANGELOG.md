@@ -5,6 +5,30 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.1] — 2026-06-04
+
+### Ajouté
+- **Panel de Diagnostic Interactif** : écran Diagnostic enrichi avec l'historique du dernier envoi (réponse brute de l'API Expo) et un bouton "Tester les notifications" (déclenchant `POST /pom/v1/test-push` pour envoyer un push de test immédiat).
+- **Vérification automatique** : actualisation automatique du log de diagnostic après l'envoi d'un push de test réussi.
+
+### Modifié
+- **Plugin WordPress** : version `1.2.0` de `pom-push-notifications.php` déployée. Envoie les notifications avec la priorité `'high'` et cible le canal `'presellia_urgent'` d'importance `AndroidImportance.MAX` pour forcer la sonnerie et l'alerte sur Android.
+
+---
+
+## [1.4.0] — 2026-06-04
+
+### Ajouté
+- **Notes de commande** : affichage et ajout de notes de commande dans l'écran de détail de commande.
+- **Icon Premium** : nouvelle icône de marque et splash screen unifiés.
+- **Champs personnalisés** : support des champs personnalisés de produits (plugin Advanced Product Fields).
+
+### Corrigé
+- **Chevauchement clavier/champs** : résolution du problème de masquage des formulaires lors de la saisie clavier (via KeyboardAvoidingView).
+- **Barre système Android** : adaptation des marges en bas de l'écran pour éviter le conflit avec les touches de navigation physique du téléphone.
+
+---
+
 ## [1.3.0] — 2026-05-02
 
 ### Ajouté

@@ -13,11 +13,19 @@ const PERSISTENT_KEYS = new Set<string>([
   'products_all',
   'products_partner',
   'customers_recent',
+  'orders_all',
+  'dashboard_top_products',
+  'dashboard_recent_orders',
   'dashboard_stats_today',
   'dashboard_stats_week',
   'dashboard_stats_month',
   'dashboard_stats_quarter',
-  'dashboard_stats_year'
+  'dashboard_stats_year',
+  'dashboard_site_visits_today',
+  'dashboard_site_visits_week',
+  'dashboard_site_visits_month',
+  'dashboard_site_visits_quarter',
+  'dashboard_site_visits_year'
 ]);
 
 export const Cache = {
@@ -102,6 +110,11 @@ export const CACHE_KEYS = {
   ALL_PRODUCTS:     'products_all',
   PARTNER_PRODUCTS: 'products_partner',
   RECENT_CUSTOMERS: 'customers_recent',
+  ORDERS_ALL:       'orders_all',
+  DASHBOARD_TOP:    'dashboard_top_products',
+  DASHBOARD_RECENT: 'dashboard_recent_orders',
+  DASHBOARD_STATS:  'dashboard_stats_',
+  DASHBOARD_VISITS: 'dashboard_site_visits_',
 } as const;
 
 // Reconstruit des WCCustomer partiels depuis les données de facturation des commandes.

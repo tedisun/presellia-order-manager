@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, Modal,
-  StyleSheet, ScrollView, Pressable,
+  StyleSheet, ScrollView, Pressable, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRANDING } from '@config/branding';
 import { useTheme } from '@context/ThemeContext';
 import type { BrandColors } from '@config/themes';
@@ -126,6 +127,7 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
 export default function FilterSheet({ visible, filters, onApply, onClose }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [local, setLocal] = React.useState<OrderFilters>(filters);
 
   React.useEffect(() => {
@@ -147,7 +149,7 @@ export default function FilterSheet({ visible, filters, onApply, onClose }: Prop
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20) }]}>
         <View style={styles.handle} />
 
         <View style={styles.header}>

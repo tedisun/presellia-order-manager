@@ -165,11 +165,13 @@ export interface CreateOrderPayload {
   customer_id: number;
   billing: Partial<WCBilling>;
   line_items: {
-    product_id:   number;
+    id?:          number;     // unique database id of the line item on the order (for updating existing items)
+    product_id:   number | null; // null deletes the line item from the order in a PUT request
     variation_id?: number;    // obligatoire si produit variable
-    quantity:     number;
-    subtotal:     string;     // prix original × qté (avant remise) — ex: "50000.00"
-    total:        string;     // prix remisé × qté (ce qui est facturé) — ex: "45000.00"
+    quantity?:    number;
+    subtotal?:    string;     // prix original × qté (avant remise) — ex: "50000.00"
+    total?:       string;     // prix remisé × qté (ce qui est facturé) — ex: "45000.00"
+    meta_data?:   WCMeta[];
   }[];
   payment_method: string;
   payment_method_title: string;

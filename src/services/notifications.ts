@@ -35,9 +35,19 @@ async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
     const Notifications = await import('expo-notifications');
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'Commandes',
-      importance: Notifications.AndroidImportance.HIGH,
+    // 1. Canal pour les ventes réussies (avec son Caissier/Cha-ching)
+    await Notifications.setNotificationChannelAsync('presellia_sales', {
+      name: 'Ventes Presellia (Cha-ching)',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'cash_register.wav',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#7C3AED',
+    });
+
+    // 2. Canal pour les autres notifications (son par défaut)
+    await Notifications.setNotificationChannelAsync('presellia_general', {
+      name: 'Notifications Générales',
+      importance: Notifications.AndroidImportance.MAX,
       sound: 'default',
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#7C3AED',
@@ -94,7 +104,7 @@ export async function registerPushToken(): Promise<void> {
 
 // ─── Vérification état mu-plugin (pour écran diagnostic) ─────────────────────
 export async function checkPomStatus(): Promise<{
-  reachable: boolean; registered: boolean; token_count?: number; error?: string;
+  reachable: boolean; registered: boolean; token_count?: number; error?: string; last_push_log?: string;
 }> {
   if (USE_MOCK || Platform.OS === 'web') return { reachable: false, registered: false, error: 'Mock/Web' };
   try {
@@ -104,10 +114,34 @@ export async function checkPomStatus(): Promise<{
       headers: { Authorization: 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`) },
     });
     if (!res.ok) return { reachable: false, registered: false, error: `HTTP ${res.status}` };
-    const json = await res.json() as { active?: boolean; registered_tokens?: number; user_has_token?: boolean };
-    return { reachable: !!json.active, registered: !!json.user_has_token, token_count: json.registered_tokens };
+    const json = await res.json() as { active?: boolean; registered_tokens?: number; user_has_token?: boolean; last_push_log?: string };
+    return { 
+      reachable: !!json.active, 
+      registered: !!json.user_has_token, 
+      token_count: json.registered_tokens,
+      last_push_log: json.last_push_log,
+    };
   } catch (err) {
     return { reachable: false, registered: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ─── Envoi d'un push de test interactif ──────────────────────────────────────
+export async function sendTestPush(): Promise<{ success: boolean; message: string; details?: string }> {
+  if (USE_MOCK || Platform.OS === 'web') {
+    return { success: false, message: 'Non supporté sur simulateur / web' };
+  }
+  try {
+    const creds = await Storage.getCredentials();
+    if (!creds) return { success: false, message: 'Identifiants introuvables' };
+    const res = await fetch(`${creds.store_url}${POM_API_PATH}/test-push`, {
+      method: 'POST',
+      headers: { Authorization: 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`) },
+    });
+    const json = await res.json() as { success: boolean; message: string; details?: string };
+    return json;
+  } catch (err) {
+    return { success: false, message: 'Erreur de connexion', details: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -148,8 +182,10 @@ export function initNotificationListeners(
       storeNotification(appNotif).catch(() => {});
       markNotificationRead(appNotif.id).catch(() => {});
 
-      if (typeof data?.orderId === 'number') {
-        onOrderTap(data.orderId);
+      const rawId = data?.orderId ?? data?.order_id;
+      const orderId = typeof rawId === 'number' ? rawId : (typeof rawId === 'string' ? parseInt(rawId, 10) : undefined);
+      if (orderId && !isNaN(orderId)) {
+        onOrderTap(orderId);
       }
     });
   }).catch(() => {});
@@ -205,12 +241,14 @@ export function expoPayloadToNotification(
   body: string,
   data: Record<string, unknown>
 ): AppNotification {
+  const rawId = data?.orderId ?? data?.order_id;
+  const orderId = typeof rawId === 'number' ? rawId : (typeof rawId === 'string' ? parseInt(rawId, 10) : undefined);
   return {
     id:         notificationId,
     type:       (data?.type as AppNotification['type']) ?? 'system',
     title:      title || 'Notification',
     body:       body  || '',
-    order_id:   typeof data?.orderId === 'number' ? data.orderId : undefined,
+    order_id:   orderId && !isNaN(orderId) ? orderId : undefined,
     read:       false,
     created_at: new Date().toISOString(),
   };

@@ -66,7 +66,48 @@ add_action('rest_api_init', function () {
             ],
         ],
     ]);
+
+    register_rest_route(POM_NAMESPACE, '/status', [
+        'methods'             => 'GET',
+        'callback'            => 'pom_get_status',
+        'permission_callback' => 'pom_require_authenticated',
+    ]);
+
+    register_rest_route(POM_NAMESPACE, '/test-push', [
+        'methods'             => 'POST',
+        'callback'            => 'pom_test_push',
+        'permission_callback' => 'pom_require_authenticated',
+    ]);
 });
+
+function pom_get_status(): WP_REST_Response {
+    $user_id = get_current_user_id();
+    $tokens = pom_get_tokens($user_id);
+    $last_log = get_option('_pom_last_push_log', 'Aucun log d\'envoi enregistré pour le moment.');
+    return new WP_REST_Response([
+        'active'            => true,
+        'user_has_token'    => !empty($tokens),
+        'registered_tokens' => count($tokens),
+        'last_push_log'     => $last_log,
+    ], 200);
+}
+
+function pom_test_push(): WP_REST_Response {
+    $user_id = get_current_user_id();
+    $tokens = pom_get_tokens($user_id);
+    if (empty($tokens)) {
+        return new WP_REST_Response([
+            'success' => false,
+            'message' => 'Aucun jeton push enregistré pour votre compte sur ce serveur.',
+        ], 400);
+    }
+    $token_strings = array_map(fn($t) => $t['token'], $tokens);
+    $title = '🔔 Test Sonore Presellia';
+    $body = 'La configuration sonore et de priorité maximale est active !';
+    $data = ['type' => 'system'];
+    $result = pom_send_push_with_result($token_strings, $title, $body, $data, 'cha-ching');
+    return new WP_REST_Response($result, $result['success'] ? 200 : 500);
+}
 
 // ─── Permission : utilisateur WP connecté (WP Application Password) ──────────
 
@@ -220,31 +261,68 @@ function pom_get_all_agent_tokens(): array {
  * @param string   $body     Corps du message
  * @param array    $data     Données custom (type, order_id…)
  */
-function pom_send_push(array $tokens, string $title, string $body, array $data = []): void {
+function pom_send_push_with_result(array $tokens, string $title, string $body, array $data = [], string $sound_type = 'default'): array {
+    if (empty($tokens)) {
+        return ['success' => false, 'message' => 'Aucun jeton fourni.', 'details' => ''];
+    }
+
+    $sound = ($sound_type === 'cha-ching') ? 'cash_register.wav' : 'default';
+    $channel_id = ($sound_type === 'cha-ching') ? 'presellia_sales' : 'presellia_general';
+
+    $messages = array_map(fn($token) => [
+        'to'        => $token,
+        'title'     => $title,
+        'body'      => $body,
+        'data'      => $data,
+        'sound'     => $sound,
+        'badge'     => 1,
+        'channelId' => $channel_id,
+        'priority'  => 'high',
+    ], $tokens);
+
+    $response = wp_remote_post(POM_EXPO_PUSH_URL, [
+        'body'    => wp_json_encode($messages),
+        'headers' => [
+            'Content-Type' => 'application/json',
+            'Accept'       => 'application/json',
+        ],
+        'timeout' => 15,
+    ]);
+
+    if (is_wp_error($response)) {
+        $err = $response->get_error_message();
+        update_option('_pom_last_push_log', 'Erreur réseau WP: ' . $err);
+        return [
+            'success' => false,
+            'message' => 'Erreur de connexion HTTP sortante du serveur WP vers Expo.',
+            'details' => $err,
+        ];
+    }
+
+    $code = wp_remote_retrieve_response_code($response);
+    $response_body = wp_remote_retrieve_body($response);
+    update_option('_pom_last_push_log', 'HTTP ' . $code . ': ' . $response_body);
+
+    if ($code !== 200) {
+        return [
+            'success' => false,
+            'message' => 'Expo API a répondu avec le statut ' . $code,
+            'details' => $response_body,
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' => 'Notification transmise avec succès à Expo.',
+        'details' => $response_body,
+    ];
+}
+
+function pom_send_push(array $tokens, string $title, string $body, array $data = [], string $sound_type = 'default'): void {
     if (empty($tokens)) return;
-
-    // L'API Expo accepte jusqu'à 100 messages par requête
     $chunks = array_chunk($tokens, 100);
-
     foreach ($chunks as $chunk) {
-        $messages = array_map(fn($token) => [
-            'to'    => $token,
-            'title' => $title,
-            'body'  => $body,
-            'data'  => $data,
-            'sound' => 'default',
-            'badge' => 1,
-        ], $chunk);
-
-        wp_remote_post(POM_EXPO_PUSH_URL, [
-            'body'    => wp_json_encode($messages),
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Accept'       => 'application/json',
-            ],
-            'timeout' => 10,
-        ]);
-        // Erreurs réseau ignorées silencieusement — les notifications sont best-effort
+        pom_send_push_with_result($chunk, $title, $body, $data, $sound_type);
     }
 }
 
@@ -285,34 +363,33 @@ function pom_notify_new_order(int $order_id): void {
         [
             'type'     => 'new_order',
             'order_id' => $order_id,
-        ]
+        ],
+        'cha-ching'
     );
 }
-
-// 1. Déclencheur : Validation de commande sur la boutique (Frontend Checkout)
-add_action('woocommerce_checkout_order_processed', 'pom_notify_new_order', 10, 1);
-
-// 2. Déclencheur : Commande insérée via l'API REST WooCommerce (notre application mobile !)
-add_action('woocommerce_rest_insert_shop_order_object', function (WC_Order $order, WP_REST_Request $request, bool $creating): void {
-    if ($creating) {
-        pom_notify_new_order($order->get_id());
-    }
-}, 10, 3);
-
-// 3. Déclencheur : Commande manuelle créée dans l'administration WordPress (Backend Admin)
-add_action('woocommerce_process_shop_order_meta', 'pom_notify_new_order', 10, 1);
-
-// ─── Hook : changement de statut commande ─────────────────────────────────────
-
+// ─── Hook : changement de statut commande (Unique déclencheur de notifications) ──
+// Nous n'écoutons plus les hooks de création bruts (checkout_order_processed, etc.)
+// pour éviter les fausses alertes sur commandes impayées (pending) et les doublons.
 add_action('woocommerce_order_status_changed', function (int $order_id, string $old_status, string $new_status): void {
-    // On ne notifie pas les transitions mineures ou les retours en arrière
+    // On ne notifie pas les transitions vers des états impayés ou échoués
     $skip = ['pending', 'failed'];
     if (in_array($new_status, $skip, true)) return;
     if ($old_status === $new_status) return;
 
-    $order    = wc_get_order($order_id);
+    $order = wc_get_order($order_id);
     if (! $order) return;
 
+    // Détection d'une nouvelle vente réussie/payée :
+    // passage d'un statut impayé/vide (pending, checkout-draft, new) à un statut payé (processing, completed)
+    $is_new_sale = in_array($old_status, ['', 'pending', 'checkout-draft'], true) && in_array($new_status, ['processing', 'completed'], true);
+
+    if ($is_new_sale) {
+        // C'est une nouvelle vente encaissée -> On envoie la notification "Nouvelle commande" avec le son de caisse enregistreuse !
+        pom_notify_new_order($order_id);
+        return;
+    }
+
+    // Sinon, c'est un changement de statut après coup (ex: d'En cours à Terminée, ou d'En cours à Annulée)
     $labels = [
         'processing' => '🔄 En cours de traitement',
         'on-hold'    => '⏸ En attente de paiement',
@@ -333,6 +410,7 @@ add_action('woocommerce_order_status_changed', function (int $order_id, string $
             'order_id'   => $order_id,
             'old_status' => $old_status,
             'new_status' => $new_status,
-        ]
+        ],
+        'default' // Son système par défaut pour les états secondaires ou de gestion
     );
 }, 10, 3);

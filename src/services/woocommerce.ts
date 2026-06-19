@@ -164,7 +164,7 @@ export async function createOrder(payload: CreateOrderPayload): Promise<WCOrder>
       status: payload.status,
       date_created: new Date().toISOString(),
       date_modified: new Date().toISOString(),
-      total: payload.line_items.reduce((sum, li) => sum + parseFloat(li.total), 0).toFixed(2),
+      total: payload.line_items.reduce((sum, li) => sum + parseFloat(li.total || '0'), 0).toFixed(2),
       currency: 'XOF',
       billing: { first_name: '', last_name: '', company: '', address_1: '', address_2: '', city: '', state: '', postcode: '', country: 'BF', email: '', phone: '', ...payload.billing },
       shipping: { first_name: '', last_name: '', address_1: '', city: '', country: 'BF' },
@@ -221,7 +221,7 @@ export async function updateOrder(id: number, payload: Partial<CreateOrderPayloa
         taxes: [],
         meta_data: [],
         sku: '',
-        price: parseFloat(li.total) / li.quantity,
+        price: parseFloat(li.total || '0') / (li.quantity || 1),
       })) : existing.line_items,
       meta_data: payload.meta_data ? [...existing.meta_data.filter(m => !payload.meta_data?.some(pm => pm.key === m.key)), ...payload.meta_data] : existing.meta_data,
     };
