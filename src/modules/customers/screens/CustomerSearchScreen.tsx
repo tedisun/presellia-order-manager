@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator,
+  StyleSheet, ActivityIndicator, Linking, Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -186,6 +187,16 @@ export default function CustomerSearchScreen() {
     });
   };
 
+  const handleWhatsApp = (phone: string) => {
+    let cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.startsWith('+')) cleaned = cleaned.substring(1);
+    if (cleaned.length === 8 && !cleaned.startsWith('226')) cleaned = '226' + cleaned;
+    
+    Linking.openURL(`https://wa.me/${cleaned}`).catch(() =>
+      Alert.alert('Erreur', 'Impossible d\'ouvrir WhatsApp.')
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.searchBar}>
@@ -213,49 +224,75 @@ export default function CustomerSearchScreen() {
             </Text>
           ) : null}
           renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.customerRow}
-              onPress={() => navigateToCustomer(item)}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {item.first_name.charAt(0)}{item.last_name.charAt(0)}
-                </Text>
-              </View>
-              <View style={styles.customerInfo}>
-                <View style={styles.nameRow}>
-                  <Text style={styles.name}>{item.first_name} {item.last_name}</Text>
-                  {item.id === 0 && (
-                    <View style={styles.guestBadge}>
-                      <Text style={styles.guestText}>Invité</Text>
-                    </View>
-                  )}
-                  {item.role === 'partner' && (
-                    <View style={styles.partnerBadge}>
-                      <Text style={styles.partnerText}>Partenaire</Text>
-                    </View>
-                  )}
-                </View>
-                {item.email ? <Text style={styles.email}>{item.email}</Text> : null}
-                {item.billing.phone ? <Text style={styles.phone}>{item.billing.phone}</Text> : null}
-                {item.billing.company ? <Text style={styles.meta}>{item.billing.company}</Text> : null}
-                {item.billing.city ? (
-                  <Text style={styles.meta}>
-                    {item.billing.city}{item.billing.country ? ` · ${item.billing.country}` : ''}
+            <View style={styles.customerRow}>
+              <TouchableOpacity
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: BRANDING.spacing.md }}
+                onPress={() => navigateToCustomer(item)}
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {item.first_name.charAt(0)}{item.last_name.charAt(0)}
                   </Text>
+                </View>
+                <View style={styles.customerInfo}>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.name}>{item.first_name} {item.last_name}</Text>
+                    {item.id === 0 && (
+                      <View style={styles.guestBadge}>
+                        <Text style={styles.guestText}>Invité</Text>
+                      </View>
+                    )}
+                    {item.role === 'partner' && (
+                      <View style={styles.partnerBadge}>
+                        <Text style={styles.partnerText}>Partenaire</Text>
+                      </View>
+                    )}
+                  </View>
+                  {item.email ? <Text style={styles.email}>{item.email}</Text> : null}
+                  {item.billing.phone ? <Text style={styles.phone}>{item.billing.phone}</Text> : null}
+                  {item.billing.company ? <Text style={styles.meta}>{item.billing.company}</Text> : null}
+                  {item.billing.city ? (
+                    <Text style={styles.meta}>
+                      {item.billing.city}{item.billing.country ? ` · ${item.billing.country}` : ''}
+                    </Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+              
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {item.billing.phone ? (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(`tel:${item.billing.phone}`)}
+                      style={{ padding: 6 }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="call-outline" size={18} color={colors.success} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleWhatsApp(item.billing.phone)}
+                      style={{ padding: 6 }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                    </TouchableOpacity>
+                  </>
                 ) : null}
+                {item.id !== 0 && (
+                  <TouchableOpacity
+                    style={[styles.ordersMeta, { paddingLeft: 6 }]}
+                    onPress={() => navigateToCustomer(item)}
+                  >
+                    <Text style={styles.ordersCount}>
+                      {orderCounts[item.id] !== undefined
+                        ? orderCounts[item.id]
+                        : (item.orders_count ?? '…')}
+                    </Text>
+                    <Text style={styles.ordersLabel}>cmd.</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              {item.id !== 0 && (
-                <View style={styles.ordersMeta}>
-                  <Text style={styles.ordersCount}>
-                    {orderCounts[item.id] !== undefined
-                      ? orderCounts[item.id]
-                      : (item.orders_count ?? '…')}
-                  </Text>
-                  <Text style={styles.ordersLabel}>cmd.</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            </View>
           )}
           ListEmptyComponent={
             searched ? (

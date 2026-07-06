@@ -378,30 +378,69 @@ export async function fetchProducts(search?: string): Promise<WCProduct[]> {
 }
 
 // Récupère l'intégralité du catalogue publié en paginant toutes les pages (100/page).
-// Utilisé pour le cache produits au démarrage (TTL 12 h).
+// Chargement optimisé en parallèle : lit l'en-tête de la page 1 pour charger les autres pages simultanément.
 export async function fetchAllProducts(): Promise<WCProduct[]> {
   if (USE_MOCK) {
     const { MOCK_PRODUCTS } = await import('@modules/orders/mock/productsMock');
     const { simulateDelay: delay } = await import('@modules/orders/mock/ordersMock');
     return delay([...MOCK_PRODUCTS]);
   }
-  const all: WCProduct[] = [];
-  let page = 1;
-  while (true) {
+
+  const creds = await Storage.getCredentials();
+  if (!creds) throw new AuthError();
+
+  const getPageUrl = (p: number) => {
     const q = new URLSearchParams({
       per_page: String(PRODUCTS_PER_PAGE),
-      page:     String(page),
+      page:     String(p),
       status:   'publish',
       orderby:  'title',
       order:    'asc',
     });
-    const batch = await wcFetch<WCProduct[]>(`${WC_API_PATH}/products?${q}`);
-    all.push(...batch.map(enrichProduct));
-    if (batch.length < PRODUCTS_PER_PAGE) break;
-    page++;
+    return `${creds.store_url}${WC_API_PATH}/products?${q}`;
+  };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`),
+  };
+
+  // Premier appel pour récupérer les produits de la page 1 et les en-têtes
+  const firstPageResponse = await fetch(getPageUrl(1), { headers });
+  if (!firstPageResponse.ok) {
+    const data = await firstPageResponse.json().catch(() => null);
+    throw new WCApiError(firstPageResponse.status, data);
   }
+
+  const firstPageProducts = await firstPageResponse.json() as WCProduct[];
+  const all: WCProduct[] = [...firstPageProducts.map(enrichProduct)];
+
+  // Récupérer le nombre total de pages
+  const totalPagesHeader = firstPageResponse.headers.get('x-wp-totalpages') || firstPageResponse.headers.get('X-WP-TotalPages');
+  const totalPages = totalPagesHeader ? parseInt(totalPagesHeader, 10) : 1;
+
+  if (totalPages > 1) {
+    const promises: Promise<WCProduct[]>[] = [];
+    for (let p = 2; p <= totalPages; p++) {
+      promises.push(
+        wcFetch<WCProduct[]>(`${WC_API_PATH}/products?` + new URLSearchParams({
+          per_page: String(PRODUCTS_PER_PAGE),
+          page:     String(p),
+          status:   'publish',
+          orderby:  'title',
+          order:    'asc',
+        }))
+      );
+    }
+    const results = await Promise.all(promises);
+    for (const batch of results) {
+      all.push(...batch.map(enrichProduct));
+    }
+  }
+
   return all;
 }
+
 
 // Top products vendus sur la période (pour la section "Fréquemment commandés").
 // Agrège depuis les 50 dernières commandes — pas besoin de view_woocommerce_reports.

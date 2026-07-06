@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  StyleSheet, Alert, RefreshControl, Linking,
+  StyleSheet, Alert, RefreshControl, Linking, Modal, FlatList, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,6 +20,23 @@ import type { BrandColors } from '@config/themes';
 
 type RoutePropType = RouteProp<CustomersStackParamList, 'CustomerDetail'>;
 type NavProp = NativeStackNavigationProp<CustomersStackParamList, 'CustomerDetail'>;
+
+const COUNTRIES = [
+  { code: 'BF', name: 'Burkina Faso' },
+  { code: 'CI', name: "Côte d'Ivoire" },
+  { code: 'SN', name: 'Sénégal' },
+  { code: 'TG', name: 'Togo' },
+  { code: 'BJ', name: 'Bénin' },
+  { code: 'ML', name: 'Mali' },
+  { code: 'NE', name: 'Niger' },
+  { code: 'GN', name: 'Guinée' },
+  { code: 'FR', name: 'France' },
+  { code: 'OTHER', name: 'Autre (Saisie manuelle)' }
+];
+
+const isStandardCountry = (code: string) => {
+  return ['BF', 'CI', 'SN', 'TG', 'BJ', 'ML', 'NE', 'GN', 'FR'].includes(code);
+};
 
 const makeStyles = (c: BrandColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.background },
@@ -182,6 +199,30 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
   orderNum: { fontSize: BRANDING.fonts.sizeSM, fontWeight: BRANDING.fonts.weightSemiBold, color: c.primary },
   orderDate: { fontSize: BRANDING.fonts.sizeXS, color: c.textMuted, marginTop: 1 },
   orderRight: { alignItems: 'flex-end', gap: 4 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: BRANDING.radius.lg,
+    borderTopRightRadius: BRANDING.radius.lg,
+    padding: BRANDING.spacing.lg,
+    maxHeight: '80%',
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: BRANDING.spacing.md,
+  },
+  modalTitle: {
+    fontSize: BRANDING.fonts.sizeLG,
+    fontWeight: BRANDING.fonts.weightBold,
+    marginBottom: BRANDING.spacing.md,
+    textAlign: 'center',
+  },
 });
 
 export default function CustomerDetailScreen() {
@@ -211,6 +252,18 @@ export default function CustomerDetailScreen() {
   const [editCompany, setEditCompany] = useState('');
   const [saving, setSaving] = useState(false);
   const [promoted, setPromoted] = useState(false); // true once guest was promoted
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  const handleWhatsApp = (phone: string) => {
+    let cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.startsWith('+')) cleaned = cleaned.substring(1);
+    if (cleaned.length === 8 && !cleaned.startsWith('226')) cleaned = '226' + cleaned;
+    
+    Linking.openURL(`https://wa.me/${cleaned}`).catch(() =>
+      Alert.alert('Erreur', 'Impossible d\'ouvrir WhatsApp.')
+    );
+  };
 
   const load = async () => {
     try {
@@ -414,10 +467,27 @@ export default function CustomerDetailScreen() {
               </View>
               <View style={styles.formField}>
                 <Text style={styles.formLabel}>Pays</Text>
-                <TextInput style={styles.formInput} value={editCountry} onChangeText={setEditCountry}
-                  placeholder="BF" placeholderTextColor={colors.textMuted} autoCapitalize="characters" maxLength={2} />
+                <TouchableOpacity
+                  style={[styles.formInput, { justifyContent: 'center', height: 42 }]}
+                  onPress={() => setShowCountryPicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: editCountry ? colors.textPrimary : colors.textMuted }}>
+                      {COUNTRIES.find(c => c.code === editCountry)?.name || (editCountry ? `Autre (${editCountry})` : 'Sélect...')}
+                    </Text>
+                    <Ionicons name="chevron-down-outline" size={14} color={colors.textMuted} />
+                  </View>
+                </TouchableOpacity>
               </View>
             </View>
+            {!isStandardCountry(editCountry) && (
+              <View style={styles.formFieldFull}>
+                <Text style={styles.formLabel}>Code pays manuel (2 lettres)</Text>
+                <TextInput style={styles.formInput} value={editCountry} onChangeText={(text) => setEditCountry(text.toUpperCase().trim().slice(0, 2))}
+                  placeholder="Ex: US, CA" placeholderTextColor={colors.textMuted} autoCapitalize="characters" maxLength={2} />
+              </View>
+            )}
             <View style={styles.formFieldFull}>
               <Text style={styles.formLabel}>Entreprise</Text>
               <TextInput style={styles.formInput} value={editCompany} onChangeText={setEditCompany}
@@ -479,10 +549,16 @@ export default function CustomerDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Contact</Text>
           {customer.billing.phone ? (
-            <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`tel:${customer.billing.phone}`)}>
-              <Ionicons name="call-outline" size={15} color={colors.success} />
-              <Text style={[styles.contactValue, { color: colors.success }]}>{customer.billing.phone}</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`tel:${customer.billing.phone}`)}>
+                <Ionicons name="call-outline" size={15} color={colors.success} />
+                <Text style={[styles.contactValue, { color: colors.success }]}>{customer.billing.phone} (Appeler)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.contactRow} onPress={() => handleWhatsApp(customer.billing.phone)}>
+                <Ionicons name="logo-whatsapp" size={15} color="#25D366" />
+                <Text style={[styles.contactValue, { color: '#25D366' }]}>{customer.billing.phone} (WhatsApp)</Text>
+              </TouchableOpacity>
+            </>
           ) : (
             <Text style={styles.noPhone}>Aucun numéro de téléphone</Text>
           )}
@@ -529,6 +605,45 @@ export default function CustomerDetailScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Country Picker Modal Sheet */}
+      <Modal visible={showCountryPicker} transparent animationType="slide" onRequestClose={() => setShowCountryPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCountryPicker(false)}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20) }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Sélectionner un pays</Text>
+            <FlatList
+              data={COUNTRIES}
+              keyExtractor={item => item.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: BRANDING.spacing.lg,
+                    paddingVertical: BRANDING.spacing.md,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }}
+                  onPress={() => {
+                    if (item.code === 'OTHER') {
+                      setEditCountry('');
+                    } else {
+                      setEditCountry(item.code);
+                    }
+                    setShowCountryPicker(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 16, color: colors.textPrimary, flex: 1 }}>{item.name}</Text>
+                  {editCountry === item.code && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                  {!isStandardCountry(editCountry) && item.code === 'OTHER' && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 350 }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }

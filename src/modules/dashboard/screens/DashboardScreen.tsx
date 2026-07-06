@@ -322,6 +322,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
 
   const [period, setPeriod]           = useState<DashboardPeriod>('today');
+  const [loadedPeriod, setLoadedPeriod] = useState<DashboardPeriod>('today');
   const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
   const [stats, setStats]             = useState<DashboardStats | null>(null);
   const [siteVisits, setSiteVisits]   = useState<{ visitors: number; pageviews: number } | null>(null);
@@ -350,6 +351,7 @@ export default function DashboardScreen() {
       let hasCache = false;
       if (cachedStats) {
         setStats(cachedStats);
+        setLoadedPeriod(period);
         hasCache = true;
       }
       if (cachedOrders) setRecentOrders(cachedOrders);
@@ -372,8 +374,17 @@ export default function DashboardScreen() {
       try {
         const cachedStats = Cache.get<DashboardStats>(CACHE_KEYS.DASHBOARD_STATS + period);
         const cachedVisits = Cache.get<any>(CACHE_KEYS.DASHBOARD_VISITS + period);
-        if (cachedStats) setStats(cachedStats);
-        if (cachedVisits) setSiteVisits(cachedVisits);
+        if (cachedStats) {
+          setStats(cachedStats);
+          setLoadedPeriod(period);
+        } else {
+          setStats(null);
+        }
+        if (cachedVisits) {
+          setSiteVisits(cachedVisits);
+        } else {
+          setSiteVisits(null);
+        }
       } catch {}
     } else {
       setIsSyncing(true);
@@ -398,6 +409,7 @@ export default function DashboardScreen() {
 
       if (s) {
         setStats(s);
+        setLoadedPeriod(period);
         const STATS_CACHE_TTL = 1 * 60 * 60 * 1000; // 1h
         Cache.set(CACHE_KEYS.DASHBOARD_STATS + period, s, STATS_CACHE_TTL);
       }
@@ -543,6 +555,8 @@ export default function DashboardScreen() {
     setShowCalendar(false);
   };
 
+  const hasCurrentData = stats && loadedPeriod === period;
+
   if (loading) {
     return <LoadingSpinner fullScreen message="Chargement du tableau de bord…" />;
   }
@@ -662,10 +676,10 @@ export default function DashboardScreen() {
               </View>
             </View>
             <Text style={styles.kpiLabel}>Chiffre d'affaires</Text>
-            {stats ? (
-              <CurrencyText amount={stats.revenue[period]} size="lg" bold color={colors.primary} />
+            {hasCurrentData ? (
+              <CurrencyText amount={stats!.revenue[period]} size="lg" bold color={colors.primary} />
             ) : (
-              <Text style={styles.kpiValue}>—</Text>
+              <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
             )}
           </View>
 
@@ -682,7 +696,11 @@ export default function DashboardScreen() {
               </View>
             </View>
             <Text style={styles.kpiLabel}>Commandes</Text>
-            <Text style={styles.kpiValue}>{stats?.period_order_count ?? '—'}</Text>
+            {hasCurrentData ? (
+              <Text style={styles.kpiValue}>{stats?.period_order_count ?? '—'}</Text>
+            ) : (
+              <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+            )}
           </View>
         </View>
 
@@ -700,7 +718,11 @@ export default function DashboardScreen() {
               </View>
             </View>
             <Text style={styles.kpiLabel}>Visiteurs</Text>
-            <Text style={styles.kpiValue}>{renderVisitors()}</Text>
+            {hasCurrentData ? (
+              <Text style={styles.kpiValue}>{renderVisitors()}</Text>
+            ) : (
+              <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+            )}
           </View>
 
           {/* Taux de conversion */}
@@ -716,7 +738,11 @@ export default function DashboardScreen() {
               </View>
             </View>
             <Text style={styles.kpiLabel}>Taux de conversion</Text>
-            <Text style={styles.kpiValue}>{renderConversionRate()}</Text>
+            {hasCurrentData ? (
+              <Text style={styles.kpiValue}>{renderConversionRate()}</Text>
+            ) : (
+              <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+            )}
           </View>
         </View>
 
@@ -733,32 +759,38 @@ export default function DashboardScreen() {
           {/* Graphique de Ventes */}
           <View style={styles.chartCard}>
             <Text style={styles.chartTitle}>Courbe de Ventes (CA en XOF)</Text>
-            <LineChart
-              data={getChartData(period, stats?.revenue[period] || 0)}
-              width={Dimensions.get('window').width - 60}
-              height={180}
-              bezier
-              chartConfig={{
-                backgroundColor: colors.surface,
-                backgroundGradientFrom: colors.surface,
-                backgroundGradientTo: colors.surface,
-                decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
-                labelColor: (opacity = 1) => colors.textSecondary,
-                style: {
-                  borderRadius: 16
-                },
-                propsForDots: {
-                  r: "5",
-                  strokeWidth: "2",
-                  stroke: colors.primary
-                }
-              }}
-              style={{
-                marginVertical: 4,
-                borderRadius: 12
-              }}
-            />
+            {hasCurrentData ? (
+              <LineChart
+                data={getChartData(period, stats!.revenue[period] || 0)}
+                width={Dimensions.get('window').width - 60}
+                height={180}
+                bezier
+                chartConfig={{
+                  backgroundColor: colors.surface,
+                  backgroundGradientFrom: colors.surface,
+                  backgroundGradientTo: colors.surface,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+                  labelColor: (opacity = 1) => colors.textSecondary,
+                  style: {
+                    borderRadius: 16
+                  },
+                  propsForDots: {
+                    r: "5",
+                    strokeWidth: "2",
+                    stroke: colors.primary
+                  }
+                }}
+                style={{
+                  marginVertical: 4,
+                  borderRadius: 12
+                }}
+              />
+            ) : (
+              <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            )}
           </View>
 
           {/* Graphique des volumes de licences par produit */}

@@ -5,6 +5,23 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.2] — 2026-07-06
+
+### Ajouté
+- **Bouton d'envoi WhatsApp direct** : bouton vert côte à côte dans le détail des commandes pour envoyer des messages de paiement pré-remplis directement via WhatsApp (`wa.me`).
+- **Actions rapides Recherche client** : ajout d'icônes tactiles indépendantes d'appel et de discussion WhatsApp directement dans chaque ligne de résultat de la recherche client.
+- **Action WhatsApp dans la fiche contact** : bouton WhatsApp dédié dans la section contact de la fiche client.
+- **Sélecteur de pays (Dropdown)** : modal de sélection bottom sheet pour choisir parmi les pays de la région (Burkina Faso, Côte d'Ivoire, Sénégal, Togo, Bénin, Mali, Niger, Guinée, France) avec champ de saisie de repli pour les codes ISO personnalisés.
+
+### Optimisé
+- **Performances de chargement du catalogue** : parallélisation du chargement des pages produits via `Promise.all` après lecture de l'en-tête `x-wp-totalpages` de la première page. Réduit le temps de chargement de 60-70%.
+- **Transition de période du tableau de bord** : introduction de l'état `loadedPeriod` affichant de discrets indicateurs de chargement locaux (spinners) au cœur des cartes KPI et graphiques lors du changement de période (évite l'affichage de valeurs incorrectes ou de zéros temporaires).
+
+### Corrigé
+- **Filet de sécurité étendu** : détection de l'état modifié (dirty) des formulaires nouveaux clients et d'édition de client pour empêcher toute perte accidentelle de données lors de la création d'une commande.
+
+---
+
 ## [1.4.1] — 2026-06-04
 
 ### Ajouté

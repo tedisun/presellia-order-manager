@@ -401,6 +401,26 @@ export default function OrderDetailScreen() {
     }
   };
 
+  const handleWhatsAppPaymentLink = async () => {
+    if (!order?.payment_url) return;
+    const currencyLabel = order.currency === 'XOF' ? 'FCFA' : order.currency;
+    const message = `Bonjour ${order.billing.first_name},\n\nVoici votre lien de paiement pour la commande #${order.number} :\n\n${order.payment_url}\n\nMontant : ${order.total} ${currencyLabel}\n\nMerci !`;
+    const encodedMessage = encodeURIComponent(message);
+    
+    let phone = order.billing.phone || '';
+    let cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.startsWith('+')) cleaned = cleaned.substring(1);
+    if (cleaned.length === 8 && !cleaned.startsWith('226')) cleaned = '226' + cleaned;
+
+    const url = cleaned 
+      ? `https://wa.me/${cleaned}?text=${encodedMessage}` 
+      : `https://wa.me/?text=${encodedMessage}`;
+
+    Linking.openURL(url).catch(() =>
+      Alert.alert('Erreur', 'Impossible d\'ouvrir WhatsApp.')
+    );
+  };
+
   const handleRefund = () => {
     if (!order) return;
     Alert.alert(
@@ -543,9 +563,23 @@ export default function OrderDetailScreen() {
 
         {/* Share payment link — prominent CTA */}
         {showShareBtn && (
-          <TouchableOpacity style={styles.shareBtn} onPress={handleSharePaymentLink} activeOpacity={0.85}>
-            <Text style={styles.shareBtnText}>📤  Partager le lien de paiement</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: BRANDING.spacing.md }}>
+            <TouchableOpacity 
+              style={[styles.shareBtn, { flex: 1 }]} 
+              onPress={handleSharePaymentLink} 
+              activeOpacity={0.85}
+            >
+              <Text style={styles.shareBtnText}>📤 Partager</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.shareBtn, { flex: 1, backgroundColor: '#25D366', shadowColor: '#25D366' }]} 
+              onPress={handleWhatsAppPaymentLink} 
+              activeOpacity={0.85}
+            >
+              <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
+              <Text style={styles.shareBtnText}>Envoyer (WA)</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Products */}

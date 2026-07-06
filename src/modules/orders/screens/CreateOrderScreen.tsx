@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Modal, FlatList,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -490,6 +490,30 @@ const makeStyles = (c: BrandColors) => StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.5 },
   submitBtnText: { color: '#FFF', fontSize: BRANDING.fonts.sizeLG, fontWeight: BRANDING.fonts.weightBold },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: BRANDING.radius.lg,
+    borderTopRightRadius: BRANDING.radius.lg,
+    padding: BRANDING.spacing.lg,
+    maxHeight: '80%',
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: BRANDING.spacing.md,
+  },
+  modalTitle: {
+    fontSize: BRANDING.fonts.sizeLG,
+    fontWeight: BRANDING.fonts.weightBold,
+    marginBottom: BRANDING.spacing.md,
+    textAlign: 'center',
+  },
 });
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
@@ -507,6 +531,7 @@ export default function CreateOrderScreen() {
   const [currency, setCurrency] = useState<string>('XOF');
   const [submitting, setSubmitting] = useState(false);
   const [loadingOrder, setLoadingOrder] = useState(false);
+  const [customerFormDirty, setCustomerFormDirty] = useState(false);
   const insets = useSafeAreaInsets();
 
   const originalOrderRef = useRef<WCOrder | null>(null);
@@ -651,8 +676,10 @@ export default function CreateOrderScreen() {
   const hasUnsavedChanges = useCallback(() => {
     const isEditing = !!route.params?.orderId;
     if (!isEditing) {
-      return customer !== null || lineItems.length > 0;
+      return customer !== null || lineItems.length > 0 || customerFormDirty;
     }
+
+    if (customerFormDirty) return true;
 
     const original = originalOrderRef.current;
     if (!original) return false;
@@ -854,6 +881,7 @@ export default function CreateOrderScreen() {
             onSelect={(c) => setCustomer(c)}
             styles={styles}
             colors={colors}
+            onFormDirtyChange={setCustomerFormDirty}
           />
         )}
         {step === 2 && (
@@ -918,14 +946,32 @@ function canProceed(step: number, customer: WCCustomer | null, items: LineItemDr
   return true;
 }
 
+const COUNTRIES = [
+  { code: 'BF', name: 'Burkina Faso' },
+  { code: 'CI', name: "Côte d'Ivoire" },
+  { code: 'SN', name: 'Sénégal' },
+  { code: 'TG', name: 'Togo' },
+  { code: 'BJ', name: 'Bénin' },
+  { code: 'ML', name: 'Mali' },
+  { code: 'NE', name: 'Niger' },
+  { code: 'GN', name: 'Guinée' },
+  { code: 'FR', name: 'France' },
+  { code: 'OTHER', name: 'Autre (Saisie manuelle)' }
+];
+
+const isStandardCountry = (code: string) => {
+  return ['BF', 'CI', 'SN', 'TG', 'BJ', 'ML', 'NE', 'GN', 'FR'].includes(code);
+};
+
 // ─── Step 1: Customer ─────────────────────────────────────────────────────────
 function StepCustomer({
-  initial, onSelect, styles, colors,
+  initial, onSelect, styles, colors, onFormDirtyChange,
 }: {
   initial: WCCustomer | null;
   onSelect: (c: WCCustomer | null) => void;
   styles: ReturnType<typeof makeStyles>;
   colors: BrandColors;
+  onFormDirtyChange?: (dirty: boolean) => void;
 }) {
   const [mode, setMode] = useState<'search' | 'create'>('search');
 
@@ -957,6 +1003,33 @@ function StepCustomer({
   const [editCity, setEditCity] = useState('');
   const [editCountry, setEditCountry] = useState('BF');
   const [editCompany, setEditCompany] = useState('');
+
+  const [showNewCountryPicker, setShowNewCountryPicker] = useState(false);
+  const [showEditCountryPicker, setShowEditCountryPicker] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  const isEditDirty = showEdit && (
+    editFirst !== (selected?.first_name || '') ||
+    editLast !== (selected?.last_name || '') ||
+    editPhone !== (selected?.billing.phone || '') ||
+    editEmail !== (selected?.email || '') ||
+    editCity !== (selected?.billing.city || '') ||
+    editCountry !== (selected?.billing.country || 'BF') ||
+    editCompany !== (selected?.billing.company || '')
+  );
+
+  const isDirty = (mode === 'create' && (
+    newFirst.trim().length > 0 ||
+    newLast.trim().length > 0 ||
+    newPhone.trim().length > 0 ||
+    newEmail.trim().length > 0 ||
+    newCity.trim().length > 0 ||
+    newCompany.trim().length > 0
+  )) || isEditDirty;
+
+  useEffect(() => {
+    onFormDirtyChange?.(isDirty);
+  }, [isDirty, onFormDirtyChange]);
 
   const openEdit = (c: WCCustomer, promote = false) => {
     setEditFirst(c.first_name);
@@ -1136,10 +1209,27 @@ function StepCustomer({
         </View>
         <View style={styles.formField}>
           <Text style={styles.formLabel}>Pays</Text>
-          <TextInput style={styles.formInput} value={editCountry} onChangeText={setEditCountry}
-            placeholder="BF" placeholderTextColor={colors.textMuted} autoCapitalize="characters" maxLength={2} />
+          <TouchableOpacity
+            style={[styles.formInput, { justifyContent: 'center', height: 42 }]}
+            onPress={() => setShowEditCountryPicker(true)}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: editCountry ? colors.textPrimary : colors.textMuted }}>
+                {COUNTRIES.find(c => c.code === editCountry)?.name || (editCountry ? `Autre (${editCountry})` : 'Sélect...')}
+              </Text>
+              <Ionicons name="chevron-down-outline" size={14} color={colors.textMuted} />
+            </View>
+          </TouchableOpacity>
         </View>
       </View>
+      {!isStandardCountry(editCountry) && (
+        <View style={styles.formFieldFull}>
+          <Text style={styles.formLabel}>Code pays manuel (2 lettres)</Text>
+          <TextInput style={styles.formInput} value={editCountry} onChangeText={(text) => setEditCountry(text.toUpperCase().trim().slice(0, 2))}
+            placeholder="Ex: US, CA" placeholderTextColor={colors.textMuted} autoCapitalize="characters" maxLength={2} />
+        </View>
+      )}
       <View style={styles.formFieldFull}>
         <Text style={styles.formLabel}>Entreprise</Text>
         <TextInput style={styles.formInput} value={editCompany} onChangeText={setEditCompany}
@@ -1346,17 +1436,34 @@ function StepCustomer({
             </View>
             <View style={styles.formField}>
               <Text style={styles.formLabel}>Pays</Text>
+              <TouchableOpacity
+                style={[styles.formInput, { justifyContent: 'center', height: 42 }]}
+                onPress={() => setShowNewCountryPicker(true)}
+                activeOpacity={0.8}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ color: newCountry ? colors.textPrimary : colors.textMuted }}>
+                    {COUNTRIES.find(c => c.code === newCountry)?.name || (newCountry ? `Autre (${newCountry})` : 'Sélect...')}
+                  </Text>
+                  <Ionicons name="chevron-down-outline" size={14} color={colors.textMuted} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {!isStandardCountry(newCountry) && (
+            <View style={styles.formFieldFull}>
+              <Text style={styles.formLabel}>Code pays manuel (2 lettres)</Text>
               <TextInput
                 style={styles.formInput}
                 value={newCountry}
-                onChangeText={setNewCountry}
-                placeholder="BF"
+                onChangeText={(text) => setNewCountry(text.toUpperCase().trim().slice(0, 2))}
+                placeholder="Ex: US, CA"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="characters"
                 maxLength={2}
               />
             </View>
-          </View>
+          )}
           <View style={styles.formFieldFull}>
             <Text style={styles.formLabel}>Entreprise (optionnel)</Text>
             <TextInput
@@ -1380,6 +1487,84 @@ function StepCustomer({
           </TouchableOpacity>
         </View>
       )}
+
+      {/* New Country Picker Modal */}
+      <Modal visible={showNewCountryPicker} transparent animationType="slide" onRequestClose={() => setShowNewCountryPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowNewCountryPicker(false)}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20) }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Sélectionner un pays</Text>
+            <FlatList
+              data={COUNTRIES}
+              keyExtractor={item => item.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: BRANDING.spacing.lg,
+                    paddingVertical: BRANDING.spacing.md,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }}
+                  onPress={() => {
+                    if (item.code === 'OTHER') {
+                      setNewCountry('');
+                    } else {
+                      setNewCountry(item.code);
+                    }
+                    setShowNewCountryPicker(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 16, color: colors.textPrimary, flex: 1 }}>{item.name}</Text>
+                  {newCountry === item.code && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                  {!isStandardCountry(newCountry) && item.code === 'OTHER' && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 350 }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Edit Country Picker Modal */}
+      <Modal visible={showEditCountryPicker} transparent animationType="slide" onRequestClose={() => setShowEditCountryPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowEditCountryPicker(false)}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20) }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Sélectionner un pays</Text>
+            <FlatList
+              data={COUNTRIES}
+              keyExtractor={item => item.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: BRANDING.spacing.lg,
+                    paddingVertical: BRANDING.spacing.md,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }}
+                  onPress={() => {
+                    if (item.code === 'OTHER') {
+                      setEditCountry('');
+                    } else {
+                      setEditCountry(item.code);
+                    }
+                    setShowEditCountryPicker(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 16, color: colors.textPrimary, flex: 1 }}>{item.name}</Text>
+                  {editCountry === item.code && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                  {!isStandardCountry(editCountry) && item.code === 'OTHER' && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 350 }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScrollView>
   );
 }
