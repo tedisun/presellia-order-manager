@@ -22,7 +22,7 @@ export const POM_API_PATH = '/wp-json/pom/v1'; // endpoint push token (mu-plugin
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
 export const GITHUB_REPO = 'tedisun/presellia-order-manager';
-export const APP_VERSION = '1.4.4'; // toujours synchronisé avec app.json > version
+export const APP_VERSION = '1.4.5'; // toujours synchronisé avec app.json > version
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 export const ORDERS_PER_PAGE    = 50;
@@ -71,3 +71,20 @@ export const DASHBOARD_PERIODS: { key: DashboardPeriod; label: string }[] = [
   { key: 'year',    label: "An"   },
   { key: 'custom',  label: "Perso" },
 ];
+
+export function cleanPhoneForWhatsApp(phone: string): string {
+  let cleaned = phone.replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('00')) {
+    cleaned = '+' + cleaned.substring(2);
+  }
+  if (cleaned.startsWith('+')) {
+    cleaned = cleaned.substring(1);
+  }
+  if (cleaned.startsWith('0') && cleaned.length > 8) {
+    cleaned = cleaned.substring(1);
+  }
+  if (cleaned.length === 8 && !cleaned.startsWith('226')) {
+    cleaned = '226' + cleaned;
+  }
+  return cleaned;
+}

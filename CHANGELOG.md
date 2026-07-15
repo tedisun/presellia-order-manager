@@ -5,6 +5,13 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.5] — 2026-07-15
+
+### Modifié
+- **Formatage WhatsApp robuste (wa.me)** : refonte globale de la logique de nettoyage des numéros de téléphone via la fonction centralisée `cleanPhoneForWhatsApp` dans `constants.ts`. Gère et corrige automatiquement les préfixes internationaux `00` (ex: `00237...`), supprime les caractères inutiles et conserve l'intégration historique du code pays local par défaut.
+
+---
+
 ## [1.4.4] — 2026-07-15
 
 ### Ajouté

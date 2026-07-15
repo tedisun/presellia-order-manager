@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BRANDING } from '@config/branding';
 import { fetchCustomers, fetchGuestCustomers, fetchCustomerOrderCount } from '@services/woocommerce';
+import { cleanPhoneForWhatsApp } from '@config/constants';
 import SearchBar from '@components/SearchBar';
 import EmptyState from '@components/EmptyState';
 import type { WCCustomer } from '@app-types/woocommerce';
@@ -188,10 +189,7 @@ export default function CustomerSearchScreen() {
   };
 
   const handleWhatsApp = (phone: string) => {
-    let cleaned = phone.replace(/[^\d+]/g, '');
-    if (cleaned.startsWith('+')) cleaned = cleaned.substring(1);
-    if (cleaned.length === 8 && !cleaned.startsWith('226')) cleaned = '226' + cleaned;
-    
+    const cleaned = cleanPhoneForWhatsApp(phone);
     Linking.openURL(`https://wa.me/${cleaned}`).catch(() =>
       Alert.alert('Erreur', 'Impossible d\'ouvrir WhatsApp.')
     );

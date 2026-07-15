@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { fetchOrder, updateOrderStatus, addOrderNote, fetchOrderStatuses, fetchOrderNotes } from '@services/woocommerce';
 import { Cache, CACHE_KEYS } from '@services/cache';
-import { ALL_ORDER_STATUSES, getStatusLabel } from '@config/constants';
+import { ALL_ORDER_STATUSES, getStatusLabel, cleanPhoneForWhatsApp } from '@config/constants';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
 import LoadingSpinner from '@components/LoadingSpinner';
@@ -437,10 +437,8 @@ export default function OrderDetailScreen() {
     const message = `Bonjour ${order.billing.first_name},\n\nVoici votre lien de paiement pour la commande #${order.number} :\n\n${order.payment_url}\n\nMontant : ${order.total} ${currencyLabel}\n\nMerci !`;
     const encodedMessage = encodeURIComponent(message);
     
-    let phone = order.billing.phone || '';
-    let cleaned = phone.replace(/[^\d+]/g, '');
-    if (cleaned.startsWith('+')) cleaned = cleaned.substring(1);
-    if (cleaned.length === 8 && !cleaned.startsWith('226')) cleaned = '226' + cleaned;
+    const phone = order.billing.phone || '';
+    const cleaned = cleanPhoneForWhatsApp(phone);
 
     const url = cleaned 
       ? `https://wa.me/${cleaned}?text=${encodedMessage}` 

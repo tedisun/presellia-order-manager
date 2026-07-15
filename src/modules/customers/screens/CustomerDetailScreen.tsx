@@ -10,6 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { fetchCustomer, fetchOrders, updateCustomerBilling, createCustomer, linkOrdersToCustomer } from '@services/woocommerce';
+import { cleanPhoneForWhatsApp } from '@config/constants';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
 import LoadingSpinner from '@components/LoadingSpinner';
@@ -256,10 +257,7 @@ export default function CustomerDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const handleWhatsApp = (phone: string) => {
-    let cleaned = phone.replace(/[^\d+]/g, '');
-    if (cleaned.startsWith('+')) cleaned = cleaned.substring(1);
-    if (cleaned.length === 8 && !cleaned.startsWith('226')) cleaned = '226' + cleaned;
-    
+    const cleaned = cleanPhoneForWhatsApp(phone);
     Linking.openURL(`https://wa.me/${cleaned}`).catch(() =>
       Alert.alert('Erreur', 'Impossible d\'ouvrir WhatsApp.')
     );
