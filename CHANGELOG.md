@@ -5,6 +5,14 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.3] — 2026-07-15
+
+### Ajouté
+- **Système de Diagnostic API et Logs persistants** : capture automatique de tous les échecs et codes de retour d'erreur de l'API WooCommerce (ex: erreur 400, e-mail existant, mauvais format de pays) directement dans le journal de logs persistant (`logger.ts`).
+- **Export des logs via Diagnostic** : possibilité pour les agents d'ouvrir l'écran de Diagnostic (depuis l'onglet Notifications), de visualiser l'historique détaillé des requêtes échouées et d'exporter/partager la trace sous forme de fichier texte en un clic (par email, WhatsApp, etc.).
+
+---
+
 ## [1.4.2] — 2026-07-06
 
 ### Ajouté

@@ -4,6 +4,7 @@
 
 import { USE_MOCK, WC_API_PATH, PPB_API_PATH, ORDERS_PER_PAGE, CUSTOMERS_PER_PAGE, PRODUCTS_PER_PAGE } from '@config/constants';
 import { Storage } from './storage';
+import { logger } from './logger';
 import type { WCOrder, WCCustomer, WCProduct, WCProductVariation, CreateOrderPayload, DashboardStats, OrderStatus, WCOrderStatus, WCOrderNote } from '@app-types/woocommerce';
 import type { DashboardPeriod } from '@config/constants';
 
@@ -40,6 +41,9 @@ async function wcFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => null);
+    const errDetails = data ? JSON.stringify(data) : 'Aucun détail';
+    const bodyStr = options.body ? ` | Payload: ${options.body}` : '';
+    logger.error('api', `Échec ${options.method || 'GET'} ${path} - Status ${response.status} - Erreur: ${errDetails}${bodyStr}`);
     throw new WCApiError(response.status, data);
   }
 

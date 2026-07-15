@@ -3,7 +3,7 @@
     "name": "Presellia Orders",
     "slug": "presellia-order-manager",
     "scheme": "presellia-orders",
-    "version": "1.4.2",
+    "version": "1.4.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.tedisun.presellia.ordermanager",
-      "versionCode": 2026070600,
+      "versionCode": 2026071500,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
