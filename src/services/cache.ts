@@ -38,17 +38,12 @@ export const Cache = {
       const keys = Array.from(PERSISTENT_KEYS);
       const pairs = await AsyncStorage.multiGet(keys);
       
-      const now = Date.now();
       for (const [key, val] of pairs) {
         if (val) {
           try {
             const entry = JSON.parse(val) as Entry<unknown>;
-            // Ne charger en mémoire que si l'entrée n'a pas expiré
-            if (entry.exp > now) {
-              store.set(key, entry);
-            } else {
-              await AsyncStorage.removeItem(key);
-            }
+            // Toujours charger en mémoire pour servir de filet de sécurité hors-ligne
+            store.set(key, entry);
           } catch {
             await AsyncStorage.removeItem(key);
           }
@@ -77,14 +72,7 @@ export const Cache = {
 
   get<T>(key: string): T | null {
     const e = store.get(key) as Entry<T> | undefined;
-    if (!e || Date.now() > e.exp) {
-      store.delete(key);
-      if (PERSISTENT_KEYS.has(key)) {
-        AsyncStorage.removeItem(key).catch(() => {});
-      }
-      return null;
-    }
-    return e.data;
+    return e ? e.data : null;
   },
 
   invalidate(key: string): void {

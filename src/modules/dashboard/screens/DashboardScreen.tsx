@@ -500,6 +500,10 @@ export default function DashboardScreen() {
 
   const renderConversionRate = () => {
     if (stats?.conversion_rate) return `${(stats.conversion_rate * 100).toFixed(2).replace('.', ',')}%`;
+    if (siteVisits?.visitors && stats?.period_order_count) {
+      const rate = stats.period_order_count / siteVisits.visitors;
+      return `${(rate * 100).toFixed(2).replace('.', ',')}%`;
+    }
     return '—';
   };
   const renderVisitors = () => {

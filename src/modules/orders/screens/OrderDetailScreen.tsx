@@ -11,6 +11,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { fetchOrder, updateOrderStatus, addOrderNote, fetchOrderStatuses, fetchOrderNotes } from '@services/woocommerce';
+import { Cache, CACHE_KEYS } from '@services/cache';
 import { ALL_ORDER_STATUSES, getStatusLabel } from '@config/constants';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
@@ -323,6 +324,32 @@ export default function OrderDetailScreen() {
   const [addingNote, setAddingNote] = useState(false);
 
   const load = async () => {
+    // 1. Tenter de charger depuis le cache local (ORDERS_ALL) en premier pour un affichage immédiat
+    const cachedOrders = Cache.get<WCOrder[]>(CACHE_KEYS.ORDERS_ALL);
+    let hasLocalData = false;
+    if (cachedOrders) {
+      const found = cachedOrders.find((x) => x.id === orderId);
+      if (found) {
+        setOrder(found);
+        setLoading(false); // Masquer le spinner principal car on a déjà les infos
+        hasLocalData = true;
+        
+        const isMutable = found.status === 'pending' || found.status === 'on-hold' || found.status === 'processing';
+        navigation.setOptions({
+          title: `Commande #${found.number}`,
+          headerRight: () => isMutable ? (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('CreateOrder', { orderId: found.id })}
+              style={{ marginRight: 8, padding: 8 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="pencil" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          ) : null
+        });
+      }
+    }
+
     try {
       const o = await fetchOrder(orderId);
       setOrder(o);
@@ -354,8 +381,11 @@ export default function OrderDetailScreen() {
           </TouchableOpacity>
         ) : null
       });
-    } catch {
-      Alert.alert('Erreur', 'Impossible de charger la commande.');
+    } catch (err) {
+      console.warn('[OrderDetail] Échec chargement API:', err);
+      if (!hasLocalData) {
+        Alert.alert('Erreur', 'Impossible de charger la commande.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

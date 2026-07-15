@@ -5,6 +5,16 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.4] — 2026-07-15
+
+### Ajouté
+- **Cache persistant Offline-First** : conservation du cache local des commandes, clients et produits au-delà de la date d'expiration pour servir de repli en mode hors-ligne.
+- **Affichage instantané des commandes** : pré-chargement immédiat du détail d'une commande via le cache local avec mise à jour silencieuse en arrière-plan (Stale-While-Revalidate).
+- **Calcul de Taux de Conversion local** : calcul dynamique local en cas d'indisponibilité ou d'erreur sur l'API Koko Analytics.
+- **Logs Koko Analytics** : journalisation détaillée des erreurs de requêtes de statistiques visiteurs dans le panneau de diagnostic.
+
+---
+
 ## [1.4.3] — 2026-07-15
 
 ### Ajouté

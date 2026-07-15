@@ -619,9 +619,14 @@ export async function fetchSiteVisits(
     const res = await fetch(url, {
       headers: { 'Authorization': 'Basic ' + btoa(`${creds.wp_username}:${creds.wp_app_password}`) },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Aucun détail');
+      logger.error('api', `Échec fetchSiteVisits (Koko) - Status ${res.status} - Détails : ${errText}`);
+      return null;
+    }
     return res.json() as Promise<{ visitors: number; pageviews: number }>;
-  } catch {
+  } catch (err) {
+    logger.error('api', `Exception dans fetchSiteVisits (Koko) : ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
