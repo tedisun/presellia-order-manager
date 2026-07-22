@@ -22,7 +22,7 @@ export const POM_API_PATH = '/wp-json/pom/v1'; // endpoint push token (mu-plugin
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
 export const GITHUB_REPO = 'tedisun/presellia-order-manager';
-export const APP_VERSION = '1.4.5'; // toujours synchronisé avec app.json > version
+export const APP_VERSION = '1.4.6'; // toujours synchronisé avec app.json > version
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 export const ORDERS_PER_PAGE    = 50;

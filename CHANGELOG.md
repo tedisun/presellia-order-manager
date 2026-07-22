@@ -5,6 +5,13 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.6] — 2026-07-22
+
+### Corrigé
+- **Verrous Anti-Double-Clic / Anti-Doublons** : implémentation systématique de verrous synchrones (`useRef`) sur tous les boutons d'actions asynchrones critiques de l'application. Empêche de manière définitive la création de commandes doublées (WooCommerce), les doublons de création de clients (résout l'erreur 400 intermittente), les doublons de promotion de comptes et les doublons d'ajout de notes de commandes en cas d'appuis répétés rapides.
+
+---
+
 ## [1.4.5] — 2026-07-15
 
 ### Modifié

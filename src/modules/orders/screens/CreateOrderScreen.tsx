@@ -536,6 +536,7 @@ export default function CreateOrderScreen() {
 
   const originalOrderRef = useRef<WCOrder | null>(null);
   const isSubmittedRef = useRef(false);
+  const submittingRef = useRef(false);
 
   // Charger la commande existante si orderId est présent en paramètre
   useEffect(() => {
@@ -758,7 +759,8 @@ export default function CreateOrderScreen() {
   const total = lineItems.reduce((s, li) => s + getLineTotal(li), 0);
 
   const handleSubmit = async () => {
-    if (!customer) return;
+    if (!customer || submitting || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const payload: CreateOrderPayload = {
@@ -851,6 +853,7 @@ export default function CreateOrderScreen() {
     } catch (err) {
       Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible d\'enregistrer la commande.');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -1007,6 +1010,8 @@ function StepCustomer({
   const [showNewCountryPicker, setShowNewCountryPicker] = useState(false);
   const [showEditCountryPicker, setShowEditCountryPicker] = useState(false);
   const insets = useSafeAreaInsets();
+  const creatingRef = useRef(false);
+  const promotingRef = useRef(false);
 
   const isEditDirty = showEdit && (
     editFirst !== (selected?.first_name || '') ||
@@ -1068,6 +1073,8 @@ function StepCustomer({
     };
 
     if (promoteMode) {
+      if (promoting || promotingRef.current) return;
+      promotingRef.current = true;
       setPromoting(true);
       try {
         const { createCustomer: create, linkOrdersToCustomer: linkOrders } = await import('@services/woocommerce');
@@ -1094,6 +1101,7 @@ function StepCustomer({
       } catch (err) {
         Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible de créer le compte.');
       } finally {
+        promotingRef.current = false;
         setPromoting(false);
       }
     } else {
@@ -1147,7 +1155,8 @@ function StepCustomer({
   }, [query, search, mode]);
 
   const handleCreate = async () => {
-    if (!newFirst.trim() || !newLast.trim() || !newEmail.trim()) return;
+    if (!newFirst.trim() || !newLast.trim() || !newEmail.trim() || creating || creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     try {
       const c = await createCustomer({
@@ -1163,6 +1172,7 @@ function StepCustomer({
     } catch (err) {
       Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible de créer le client.');
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   };

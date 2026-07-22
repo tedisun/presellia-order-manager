@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, FlatList,
   StyleSheet, Alert, Share, RefreshControl, Linking, Modal,
@@ -322,6 +322,7 @@ export default function OrderDetailScreen() {
   const [notes, setNotes] = useState<WCOrderNote[]>([]);
   const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const addingNoteRef = useRef(false);
 
   const load = async () => {
     // 1. Tenter de charger depuis le cache local (ORDERS_ALL) en premier pour un affichage immédiat
@@ -489,7 +490,8 @@ export default function OrderDetailScreen() {
   };
 
   const handleAddNote = async () => {
-    if (!newNote.trim()) return;
+    if (!newNote.trim() || addingNote || addingNoteRef.current) return;
+    addingNoteRef.current = true;
     setAddingNote(true);
     try {
       await addOrderNote(orderId, newNote.trim());
@@ -500,6 +502,7 @@ export default function OrderDetailScreen() {
     } catch {
       Alert.alert('Erreur', "Impossible d'ajouter la note.");
     } finally {
+      addingNoteRef.current = false;
       setAddingNote(false);
     }
   };

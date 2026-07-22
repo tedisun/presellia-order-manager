@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, Alert, RefreshControl, Linking, Modal, FlatList, Platform,
@@ -255,6 +255,7 @@ export default function CustomerDetailScreen() {
   const [promoted, setPromoted] = useState(false); // true once guest was promoted
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const insets = useSafeAreaInsets();
+  const savingRef = useRef(false);
 
   const handleWhatsApp = (phone: string) => {
     const cleaned = cleanPhoneForWhatsApp(phone);
@@ -311,7 +312,7 @@ export default function CustomerDetailScreen() {
   };
 
   const saveEdit = async () => {
-    if (!customer) return;
+    if (!customer || saving || savingRef.current) return;
     const email = editEmail.trim();
 
     if (promoteMode && !email) {
@@ -319,6 +320,7 @@ export default function CustomerDetailScreen() {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const updated: WCCustomer = {
@@ -378,6 +380,7 @@ export default function CustomerDetailScreen() {
     } catch (err) {
       Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible de sauvegarder.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
