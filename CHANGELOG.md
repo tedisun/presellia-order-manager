@@ -5,6 +5,16 @@ Format : [SemVer](https://semver.org/) · [Keep a Changelog](https://keepachange
 
 ---
 
+## [1.4.7] — 2026-11-10
+
+### Ajouté
+- **Sélecteur de pays complet avec recherche en temps réel** :
+  - Intégration de la liste complète des pays africains (notamment le Congo RDC `CD`, Congo Brazzaville `CG`, Cameroun `CM`, Gabon `GA`, Tchad `TD`, etc.) ainsi que les principales destinations de la diaspora (Belgique `BE`, Canada `CA`, Suisse `CH`, États-Unis `US`, etc.), soit 68 pays au total avec drapeaux natifs et codes ISO officiels.
+  - Ajout d'une barre de recherche instantanée (avec gestion des accents, minuscules, et mots-clés comme "RDC", "Kinshasa", "Brazza", etc.) évitant d'avoir à faire défiler manuellement ou à saisir les codes pays à 2 lettres.
+  - Centralisation de la configuration dans `src/config/countries.ts` et création du composant réutilisable `CountryPickerModal`.
+
+---
+
 ## [1.4.6] — 2026-07-22
 
 ### Corrigé

@@ -11,6 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { BRANDING } from '@config/branding';
 import { fetchCustomer, fetchOrders, updateCustomerBilling, createCustomer, linkOrdersToCustomer } from '@services/woocommerce';
 import { cleanPhoneForWhatsApp } from '@config/constants';
+import { isStandardCountry, getCountryName } from '@config/countries';
+import CountryPickerModal from '@components/CountryPickerModal';
 import CurrencyText from '@components/CurrencyText';
 import StatusBadge from '@components/StatusBadge';
 import LoadingSpinner from '@components/LoadingSpinner';
@@ -21,23 +23,6 @@ import type { BrandColors } from '@config/themes';
 
 type RoutePropType = RouteProp<CustomersStackParamList, 'CustomerDetail'>;
 type NavProp = NativeStackNavigationProp<CustomersStackParamList, 'CustomerDetail'>;
-
-const COUNTRIES = [
-  { code: 'BF', name: 'Burkina Faso' },
-  { code: 'CI', name: "Côte d'Ivoire" },
-  { code: 'SN', name: 'Sénégal' },
-  { code: 'TG', name: 'Togo' },
-  { code: 'BJ', name: 'Bénin' },
-  { code: 'ML', name: 'Mali' },
-  { code: 'NE', name: 'Niger' },
-  { code: 'GN', name: 'Guinée' },
-  { code: 'FR', name: 'France' },
-  { code: 'OTHER', name: 'Autre (Saisie manuelle)' }
-];
-
-const isStandardCountry = (code: string) => {
-  return ['BF', 'CI', 'SN', 'TG', 'BJ', 'ML', 'NE', 'GN', 'FR'].includes(code);
-};
 
 const makeStyles = (c: BrandColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.background },
@@ -475,7 +460,7 @@ export default function CustomerDetailScreen() {
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text style={{ color: editCountry ? colors.textPrimary : colors.textMuted }}>
-                      {COUNTRIES.find(c => c.code === editCountry)?.name || (editCountry ? `Autre (${editCountry})` : 'Sélect...')}
+                      {getCountryName(editCountry)}
                     </Text>
                     <Ionicons name="chevron-down-outline" size={14} color={colors.textMuted} />
                   </View>
@@ -608,43 +593,12 @@ export default function CustomerDetailScreen() {
       </ScrollView>
 
       {/* Country Picker Modal Sheet */}
-      <Modal visible={showCountryPicker} transparent animationType="slide" onRequestClose={() => setShowCountryPicker(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCountryPicker(false)}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 48 : 20) }]}>
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Sélectionner un pays</Text>
-            <FlatList
-              data={COUNTRIES}
-              keyExtractor={item => item.code}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: BRANDING.spacing.lg,
-                    paddingVertical: BRANDING.spacing.md,
-                    borderBottomWidth: 1,
-                    borderBottomColor: colors.border,
-                  }}
-                  onPress={() => {
-                    if (item.code === 'OTHER') {
-                      setEditCountry('');
-                    } else {
-                      setEditCountry(item.code);
-                    }
-                    setShowCountryPicker(false);
-                  }}
-                >
-                  <Text style={{ fontSize: 16, color: colors.textPrimary, flex: 1 }}>{item.name}</Text>
-                  {editCountry === item.code && <Ionicons name="checkmark" size={18} color={colors.primary} />}
-                  {!isStandardCountry(editCountry) && item.code === 'OTHER' && <Ionicons name="checkmark" size={18} color={colors.primary} />}
-                </TouchableOpacity>
-              )}
-              style={{ maxHeight: 350 }}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <CountryPickerModal
+        visible={showCountryPicker}
+        selectedCountry={editCountry}
+        onSelect={setEditCountry}
+        onClose={() => setShowCountryPicker(false)}
+      />
     </SafeAreaView>
   );
 }
